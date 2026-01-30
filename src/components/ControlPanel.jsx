@@ -9,7 +9,10 @@ const ControlPanel = ({ onDownload }) => {
         isScaleMode,
         scaleRatio,
         viewScale,
-        setViewScale
+        setViewScale,
+        addText,
+        removeZone,
+        selectedId
     } = useShelter();
 
     const fileInputRef = useRef(null);
@@ -60,9 +63,10 @@ const ControlPanel = ({ onDownload }) => {
             </div>
 
             <div className="control-group">
+                <button onClick={addText}>テキスト追加</button>
                 <button
-                    disabled={!useShelter().selectedId}
-                    onClick={() => useShelter().removeZone(useShelter().selectedId)}
+                    disabled={!selectedId}
+                    onClick={() => removeZone(selectedId)}
                 >
                     選択削除
                 </button>

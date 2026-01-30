@@ -61,7 +61,6 @@ const CanvasArea = ({ stageRef }) => {
     const handleDrop = (e) => {
         e.preventDefault();
         stageRef.current.setPointersPositions(e);
-        const pointerPosition = stageRef.current.getPointerPosition();
 
         // Convert to relative coordinates inside the stage (considering zoom/pan implies stage transform, 
         // but simplified here: we assume stage x/y are 0 for now or handled. 
@@ -194,19 +193,36 @@ const CanvasArea = ({ stageRef }) => {
                 </Layer>
 
                 <Layer>
-                    {zones.map((zone, i) => (
-                        <ZoneItem
-                            key={zone.id}
-                            shapeProps={zone}
-                            isSelected={zone.id === selectedId}
-                            onSelect={() => {
-                                if (!isScaleMode) setSelectedId(zone.id);
-                            }}
-                            onChange={(newAttrs) => {
-                                updateZone(zone.id, newAttrs);
-                            }}
-                        />
-                    ))}
+                    {zones.map((zone) => {
+                        if (zone.type === 'TEXT') {
+                            return (
+                                <TextItem
+                                    key={zone.id}
+                                    shapeProps={zone}
+                                    isSelected={zone.id === selectedId}
+                                    onSelect={() => {
+                                        if (!isScaleMode) setSelectedId(zone.id);
+                                    }}
+                                    onChange={(newAttrs) => {
+                                        updateZone(zone.id, newAttrs);
+                                    }}
+                                />
+                            );
+                        }
+                        return (
+                            <ZoneItem
+                                key={zone.id}
+                                shapeProps={zone}
+                                isSelected={zone.id === selectedId}
+                                onSelect={() => {
+                                    if (!isScaleMode) setSelectedId(zone.id);
+                                }}
+                                onChange={(newAttrs) => {
+                                    updateZone(zone.id, newAttrs);
+                                }}
+                            />
+                        );
+                    })}
                 </Layer>
             </Stage>
         </div>
@@ -244,7 +260,7 @@ const ZoneItem = ({ shapeProps, isSelected, onSelect, onChange }) => {
                         y: e.target.y(),
                     });
                 }}
-                onTransformEnd={(e) => {
+                onTransformEnd={() => {
                     // transformer changes scale and rotation
                     const node = shapeRef.current;
                     const scaleX = node.scaleX();
@@ -286,6 +302,8 @@ const ZoneItem = ({ shapeProps, isSelected, onSelect, onChange }) => {
             {isSelected && (
                 <Transformer
                     ref={trRef}
+                    resizeEnabled={shapeProps.resizable !== false}
+                    rotateEnabled={true}
                     boundBoxFunc={(oldBox, newBox) => {
                         // limit resize
                         if (newBox.width < 5 || newBox.height < 5) {
@@ -300,3 +318,80 @@ const ZoneItem = ({ shapeProps, isSelected, onSelect, onChange }) => {
 };
 
 export default CanvasArea;
+
+const TextItem = ({ shapeProps, isSelected, onSelect, onChange }) => {
+    const shapeRef = useRef();
+    const trRef = useRef();
+
+    useEffect(() => {
+        if (isSelected && trRef.current) {
+            trRef.current.nodes([shapeRef.current]);
+            trRef.current.getLayer().batchDraw();
+        }
+    }, [isSelected]);
+
+    const handleDblClick = () => {
+        const newText = prompt('テキストを入力してください:', shapeProps.text);
+        if (newText !== null) {
+            onChange({
+                ...shapeProps,
+                text: newText
+            });
+        }
+    };
+
+    return (
+        <React.Fragment>
+            <Text
+                draggable
+                x={shapeProps.x}
+                y={shapeProps.y}
+                text={shapeProps.text}
+                fontSize={shapeProps.fontSize}
+                scaleX={shapeProps.scaleX}
+                scaleY={shapeProps.scaleY}
+                rotation={shapeProps.rotation}
+                fill={shapeProps.color}
+                onClick={onSelect}
+                onTap={onSelect}
+                onDblClick={handleDblClick}
+                onDragEnd={(e) => {
+                    onChange({
+                        ...shapeProps,
+                        x: e.target.x(),
+                        y: e.target.y(),
+                    });
+                }}
+                onTransformEnd={() => {
+                    const node = shapeRef.current;
+                    const scaleX = node.scaleX();
+                    const scaleY = node.scaleY();
+
+                    // reset scale
+                    // node.scaleX(1);
+                    // node.scaleY(1);
+                    // For text, we might want to keep scale or update fontSize.
+                    // Keeping scale is easier for now to support arbitrary resizing visual.
+
+                    onChange({
+                        ...shapeProps,
+                        x: node.x(),
+                        y: node.y(),
+                        rotation: node.rotation(),
+                        scaleX: scaleX,
+                        scaleY: scaleY
+                    });
+                }}
+                ref={shapeRef}
+            />
+            {isSelected && (
+                <Transformer
+                    ref={trRef}
+                    resizeEnabled={true}
+                    rotateEnabled={true}
+                    enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
+                />
+            )}
+        </React.Fragment>
+    );
+};

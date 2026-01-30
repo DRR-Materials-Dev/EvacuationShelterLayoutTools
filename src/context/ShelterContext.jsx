@@ -69,10 +69,29 @@ export const ShelterProvider = ({ children }) => {
             height: type.height * scaleRatio,
             rotation: 0,
             color: type.color,
+            resizable: type.resizable,
         };
         // Add to end (top of stack)
         setZones([...zones, newZone]);
         setSelectedId(newZone.id);
+    };
+
+    const addText = () => {
+        const newText = {
+            id: `text-${Date.now()}`,
+            type: 'TEXT',
+            text: 'テキストを入力',
+            x: 100, // Default position (needs improved logic to center ideally, but fixed for MVP)
+            y: 100,
+            fontSize: 20,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            color: '#000000',
+            resizable: true // Text is always resizable
+        };
+        setZones([...zones, newText]);
+        setSelectedId(newText.id);
     };
 
     const updateZone = (id, newAttrs) => {
@@ -104,7 +123,7 @@ export const ShelterProvider = ({ children }) => {
         zones, setZones,
         zoneTypes, addZoneType,
         selectedId, setSelectedId,
-        addZone, updateZone, removeZone, clearAll,
+        addZone, addText, updateZone, removeZone, clearAll,
         isScaleMode, setIsScaleMode
     };
 
@@ -115,4 +134,5 @@ export const ShelterProvider = ({ children }) => {
     );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useShelter = () => useContext(ShelterContext);
