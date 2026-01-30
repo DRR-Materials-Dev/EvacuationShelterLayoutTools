@@ -74,6 +74,7 @@ const ControlPanel = ({ onDownload }) => {
                     if (confirm('配置を全て削除しますか？')) clearAll();
                 }}>全削除</button>
                 <button className="primary" onClick={onDownload}>画像保存</button>
+                <span style={{ marginLeft: '15px', color: '#888', fontSize: '0.9em' }}>Ver. β1</span>
             </div>
         </div>
     );

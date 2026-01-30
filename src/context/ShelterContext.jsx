@@ -20,13 +20,54 @@ export const ShelterProvider = ({ children }) => {
 
     const initialData = loadData();
 
+    // Migration / Merge Logic
+    // 1. Merge default zone types to ensure latest properties (like resizable: false) are applied to stored data
+    const getMergedZoneTypes = (storedTypes) => {
+        if (!storedTypes) return DEFAULT_ZONES;
+        return storedTypes.map(t => {
+            const defaultDef = DEFAULT_ZONES.find(dz => dz.id === t.id);
+            if (defaultDef) {
+                return { ...t, ...defaultDef }; // Overwrite stored data with code defaults for default items
+            }
+            return t; // Keep custom items as is
+        });
+    };
+
+    // 2. Fix existing zones on the map to respect the new resizable flag
+    const getFixedZones = (storedZones, mergedTypes) => {
+        if (!storedZones) return [];
+        return storedZones.map(z => {
+            // Find its type definition
+            // Some old data might not have typeId, but let's assume standard structure or fallback
+            if (z.type === 'TEXT') {
+                // Ensure text has resizable: true if missing
+                return { ...z, resizable: true };
+            }
+
+            const typeDef = mergedTypes.find(t => t.id === z.typeId);
+            if (typeDef) {
+                // Determine if it should be resizable based on type definition
+                // If typeDef says resizable: false, enforce it.
+                // If z.resizable is undefined, take from typeDef.
+                return {
+                    ...z,
+                    resizable: typeDef.resizable !== undefined ? typeDef.resizable : z.resizable
+                };
+            }
+            return z;
+        });
+    };
+
+    const mergedZoneTypes = getMergedZoneTypes(initialData?.zoneTypes);
+    const fixedZones = getFixedZones(initialData?.zones, mergedZoneTypes);
+
     // Application State
     const [backgroundImage, setBackgroundImage] = useState(null);
     const [scaleRatio, setScaleRatio] = useState(initialData?.scaleRatio || INITIAL_SCALE_RATIO);
     const [viewScale, setViewScale] = useState(1);
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
-    const [zones, setZones] = useState(initialData?.zones || []);
-    const [zoneTypes, setZoneTypes] = useState(initialData?.zoneTypes || DEFAULT_ZONES);
+    const [zones, setZones] = useState(fixedZones);
+    const [zoneTypes, setZoneTypes] = useState(mergedZoneTypes);
     const [selectedId, setSelectedId] = useState(null);
     const [isScaleMode, setIsScaleMode] = useState(false);
 
