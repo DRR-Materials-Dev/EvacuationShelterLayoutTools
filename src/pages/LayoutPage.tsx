@@ -1,0 +1,379 @@
+import { useCallback, useRef, useState } from 'react';
+import { Modal, Button, Group, Text, Stack } from '@mantine/core';
+import Konva from 'konva';
+import AppHeader from '../shared/components/AppHeader.tsx';
+import Canvas from '../tools/layout/Canvas.tsx';
+import ZonePalette from '../tools/layout/ZonePalette.tsx';
+import Toolbar from '../tools/layout/Toolbar.tsx';
+import StatusBar from '../tools/layout/StatusBar.tsx';
+import ScaleCalibrationModal from '../tools/layout/ScaleCalibrationModal.tsx';
+import AddTextModal from '../tools/layout/AddTextModal.tsx';
+import EditTextModal from '../tools/layout/EditTextModal.tsx';
+import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
+import { useLayoutState } from '../tools/layout/useLayoutState.ts';
+import { downloadLayout, readLayoutFile, LayoutParseError } from '../shared/layoutIO.ts';
+import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
+
+const LayoutPage = () => {
+  const state = useLayoutState();
+  const actions = state; // 同オブジェクト（型上分離されているが実体は同じ）
+  const stageRef = useRef<Konva.Stage | null>(null);
+
+  const [scaleModal, setScaleModal] = useState<{ opened: boolean; distancePx: number }>({
+    opened: false,
+    distancePx: 0,
+  });
+  const [pendingZoneListFile, setPendingZoneListFile] = useState<File | null>(null);
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [resetZoneListConfirm, setResetZoneListConfirm] = useState(false);
+  const [textPlacePosition, setTextPlacePosition] = useState<{ x: number; y: number } | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  /* ---------- 背景画像の読み込み ---------- */
+  const handleLoadBackground = useCallback(
+    (file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+        const img = new Image();
+        img.onload = () => {
+          actions.setBackground({ dataUrl, width: img.width, height: img.height });
+          setStatusMessage(null);
+        };
+        img.onerror = () => setStatusMessage('画像の読み込みに失敗しました');
+        img.src = dataUrl;
+      };
+      reader.onerror = () => setStatusMessage('ファイルの読み込みに失敗しました');
+      reader.readAsDataURL(file);
+    },
+    [actions],
+  );
+
+  /* ---------- 縮尺キャリブレーション ---------- */
+  const handleToggleScaleMode = useCallback(() => {
+    actions.setScalePoints([]);
+    actions.setIsScaleMode(!state.isScaleMode);
+  }, [actions, state.isScaleMode]);
+
+  const handleScaleCalibrated = useCallback((distancePx: number) => {
+    setScaleModal({ opened: true, distancePx });
+  }, []);
+
+  const handleScaleSubmit = useCallback(
+    (distanceMeters: number) => {
+      const ratio = scaleModal.distancePx / distanceMeters;
+      actions.setScaleRatio(ratio);
+      actions.setIsScaleMode(false);
+      actions.setScalePoints([]);
+      setScaleModal({ opened: false, distancePx: 0 });
+      setStatusMessage(`縮尺を設定しました: 1m = ${ratio.toFixed(1)} px`);
+    },
+    [actions, scaleModal.distancePx],
+  );
+
+  const handleScaleCancel = useCallback(() => {
+    actions.setScalePoints([]);
+    actions.setIsScaleMode(false);
+    setScaleModal({ opened: false, distancePx: 0 });
+  }, [actions]);
+
+  /* ---------- ズーム ---------- */
+  const handleZoomIn = useCallback(() => {
+    actions.setViewScale(Math.min(state.viewScale * 1.2, 10));
+  }, [actions, state.viewScale]);
+  const handleZoomOut = useCallback(() => {
+    actions.setViewScale(Math.max(state.viewScale / 1.2, 0.1));
+  }, [actions, state.viewScale]);
+
+  /* ---------- テキスト追加 ---------- */
+  const handleToggleAddText = useCallback(() => {
+    // 排他: スケール設定中なら解除し、テキストモードに切替
+    if (state.isScaleMode) {
+      actions.setScalePoints([]);
+      actions.setIsScaleMode(false);
+    }
+    actions.setIsAddingText(!state.isAddingText);
+    setStatusMessage(state.isAddingText ? null : '配置先をクリックしてください');
+  }, [actions, state.isAddingText, state.isScaleMode]);
+
+  const handleTextPlaceRequested = useCallback(
+    (xMeters: number, yMeters: number) => {
+      setTextPlacePosition({ x: xMeters, y: yMeters });
+      actions.setIsAddingText(false);
+    },
+    [actions],
+  );
+
+  const handleTextSubmit = useCallback(
+    (text: string, fontSize: number, color: string) => {
+      if (!textPlacePosition) return;
+      actions.addText(textPlacePosition.x, textPlacePosition.y, text, fontSize, color);
+      setTextPlacePosition(null);
+      setStatusMessage('テキストを配置しました');
+    },
+    [actions, textPlacePosition],
+  );
+
+  const handleTextCancel = useCallback(() => {
+    setTextPlacePosition(null);
+    setStatusMessage(null);
+  }, []);
+
+  /* ---------- テキスト編集 ---------- */
+  const editingText =
+    editingTextId !== null
+      ? (state.placed.find((p) => p.id === editingTextId && p.kind === 'text') ?? null)
+      : null;
+
+  const handleTextEditSubmit = useCallback(
+    (text: string, fontSize: number, color: string) => {
+      if (!editingTextId) return;
+      actions.updatePlaced(editingTextId, { text, fontSize, color });
+      setEditingTextId(null);
+      setStatusMessage('テキストを更新しました');
+    },
+    [actions, editingTextId],
+  );
+
+  const handleTextEditCancel = useCallback(() => {
+    setEditingTextId(null);
+  }, []);
+
+  /* ---------- 選択削除 ---------- */
+  const handleRemoveSelected = useCallback(() => {
+    if (state.selectedId) actions.removePlaced(state.selectedId);
+  }, [actions, state.selectedId]);
+
+  /* ---------- 全削除 ---------- */
+  const handleClearAllConfirm = useCallback(() => {
+    actions.clearAll();
+    setClearAllConfirm(false);
+    setStatusMessage('全ての配置と背景画像を削除しました');
+  }, [actions]);
+
+  /* ---------- 区画リスト読み込み ---------- */
+  const handleLoadZoneListFile = useCallback(
+    (file: File) => {
+      if (state.placed.length > 0) {
+        setPendingZoneListFile(file);
+      } else {
+        void applyZoneListFile(file);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.placed.length],
+  );
+
+  const applyZoneListFile = useCallback(
+    async (file: File) => {
+      try {
+        const list = await readZoneListFile(file);
+        actions.replaceZoneList(list);
+        setStatusMessage(`区画リスト「${list.name}」を読み込みました`);
+      } catch (e) {
+        const msg = e instanceof ZoneListParseError ? e.message : '区画リストの読み込みに失敗しました';
+        setStatusMessage(msg);
+      }
+    },
+    [actions],
+  );
+
+  const handleConfirmZoneListLoad = useCallback(() => {
+    if (pendingZoneListFile) {
+      void applyZoneListFile(pendingZoneListFile);
+      setPendingZoneListFile(null);
+    }
+  }, [pendingZoneListFile, applyZoneListFile]);
+
+  /* ---------- 区画リストをデフォルトに戻す ---------- */
+  const handleResetZoneList = useCallback(() => {
+    actions.resetZoneListToDefault();
+    setResetZoneListConfirm(false);
+    setStatusMessage('区画リストをデフォルトに戻しました（配置済みの区画もクリアしました）');
+  }, [actions]);
+
+  /* ---------- レイアウト保存 ---------- */
+  const handleSaveLayout = useCallback(() => {
+    const layout = actions.buildLayoutFile();
+    downloadLayout(layout);
+    setStatusMessage('レイアウトファイルをダウンロードしました');
+  }, [actions]);
+
+  /* ---------- レイアウト読み込み ---------- */
+  const handleLoadLayoutFile = useCallback(
+    async (file: File) => {
+      try {
+        const layout = await readLayoutFile(file);
+        actions.loadLayout(layout);
+        setStatusMessage('レイアウトを読み込みました');
+      } catch (e) {
+        const msg = e instanceof LayoutParseError ? e.message : 'レイアウトの読み込みに失敗しました';
+        setStatusMessage(msg);
+      }
+    },
+    [actions],
+  );
+
+  /* ---------- PNG ダウンロード ---------- */
+  const handleDownloadPng = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const uri = stage.toDataURL({ pixelRatio: 2 });
+    const a = document.createElement('a');
+    a.href = uri;
+    a.download = 'evacuation-layout.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setStatusMessage('PNG をダウンロードしました');
+  }, []);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <AppHeader title="避難所レイアウト" />
+      <Toolbar
+        isScaleMode={state.isScaleMode}
+        isAddingText={state.isAddingText}
+        hasSelection={state.selectedId !== null}
+        onLoadBackgroundImage={handleLoadBackground}
+        onToggleScaleMode={handleToggleScaleMode}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onAddText={handleToggleAddText}
+        onRemoveSelected={handleRemoveSelected}
+        onClearAll={() => setClearAllConfirm(true)}
+        onSaveLayout={handleSaveLayout}
+        onLoadLayoutFile={(f) => void handleLoadLayoutFile(f)}
+        onLoadZoneListFile={handleLoadZoneListFile}
+        onResetZoneList={() => setResetZoneListConfirm(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onDownloadPng={handleDownloadPng}
+      />
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <ZonePalette zoneList={state.zoneList} />
+        <Canvas
+          state={state}
+          actions={actions}
+          onScaleCalibrated={handleScaleCalibrated}
+          onTextPlaceRequested={handleTextPlaceRequested}
+          onTextEditRequested={setEditingTextId}
+          stageRef={stageRef}
+        />
+      </div>
+      <StatusBar
+        scaleRatio={state.scaleRatio}
+        viewScale={state.viewScale}
+        placedCount={state.placed.length}
+        message={statusMessage}
+      />
+
+      {/* 縮尺入力モーダル（毎回フレッシュな状態で開くため key を切り替える） */}
+      <ScaleCalibrationModal
+        key={scaleModal.opened ? `open-${scaleModal.distancePx}` : 'closed'}
+        opened={scaleModal.opened}
+        distancePx={scaleModal.distancePx}
+        onCancel={handleScaleCancel}
+        onSubmit={handleScaleSubmit}
+      />
+
+      {/* テキスト入力モーダル (新規追加) */}
+      <AddTextModal
+        key={textPlacePosition ? `text-${textPlacePosition.x}-${textPlacePosition.y}` : 'text-closed'}
+        opened={textPlacePosition !== null}
+        position={textPlacePosition}
+        onCancel={handleTextCancel}
+        onSubmit={handleTextSubmit}
+      />
+
+      {/* ユーザー設定モーダル（開くたびに最新値で再マウント） */}
+      {settingsOpen && (
+        <UserSettingsModal opened onClose={() => setSettingsOpen(false)} />
+      )}
+
+      {/* テキスト編集モーダル (既存テキストのダブルクリック) */}
+      {editingText && editingText.kind === 'text' && (
+        <EditTextModal
+          key={`edit-${editingText.id}`}
+          opened
+          initialText={editingText.text}
+          initialFontSize={editingText.fontSize}
+          initialColor={editingText.color}
+          onCancel={handleTextEditCancel}
+          onSubmit={handleTextEditSubmit}
+        />
+      )}
+
+      {/* 区画リスト読み込み警告 */}
+      <Modal
+        opened={pendingZoneListFile !== null}
+        onClose={() => setPendingZoneListFile(null)}
+        title="区画リストの読み込み"
+        centered
+      >
+        <Stack>
+          <Text size="sm">
+            配置されている区画が全て削除されますがよろしいですか？
+          </Text>
+          <Text size="xs" c="dimmed">
+            読み込もうとしているファイル: {pendingZoneListFile?.name}
+          </Text>
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setPendingZoneListFile(null)}>
+              キャンセル
+            </Button>
+            <Button color="red" onClick={handleConfirmZoneListLoad}>
+              削除して読み込む
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* 全削除確認 */}
+      <Modal
+        opened={clearAllConfirm}
+        onClose={() => setClearAllConfirm(false)}
+        title="全削除の確認"
+        centered
+      >
+        <Stack>
+          <Text size="sm">配置されている区画・テキストと背景画像をすべて削除します。よろしいですか？</Text>
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setClearAllConfirm(false)}>
+              キャンセル
+            </Button>
+            <Button color="red" onClick={handleClearAllConfirm}>
+              全て削除
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* 区画リスト初期化確認 */}
+      <Modal
+        opened={resetZoneListConfirm}
+        onClose={() => setResetZoneListConfirm(false)}
+        title="区画リストの初期化"
+        centered
+      >
+        <Stack>
+          <Text size="sm">
+            区画リストをデフォルトに戻します。配置されている区画も全て削除され、共有区画リスト
+            （他ツールと共有される設定）もクリアされます。よろしいですか？
+          </Text>
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setResetZoneListConfirm(false)}>
+              キャンセル
+            </Button>
+            <Button color="red" onClick={handleResetZoneList}>
+              デフォルトに戻す
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </div>
+  );
+};
+
+export default LayoutPage;
