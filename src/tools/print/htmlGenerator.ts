@@ -1,5 +1,11 @@
 import type { ZoneType } from '../../shared/types.ts';
-import { getZoneBorder } from '../../shared/types.ts';
+import {
+  getZoneBorder,
+  getZoneDisplayText,
+  getZoneNameAlignH,
+  getZoneNameAlignV,
+  getZoneNameColor,
+} from '../../shared/types.ts';
 import { getPaperSizeMm, getPrintScaleMmPerMeter } from './paperSizes.ts';
 import { PAGE_HEADER_HEIGHT_MM, type Page, type Placement } from './layoutAlgorithms.ts';
 import type { PrintSettings, ScaleSetting } from './types.ts';
@@ -45,8 +51,21 @@ const renderZoneSvg = (p: Placement, settings: PrintSettings, mmPerMeter: number
   // viewBox サイズ（1m = 100 単位）。等比なので preserveAspectRatio は無視可
   const vbW = z.width * 100;
   const vbH = z.height * 100;
-  // 名称用フォントサイズ（viewBox 単位の 12% を上限とし、極端に小さい区画でも 4 単位は確保）
-  const nameFont = Math.max(4, Math.min(vbW, vbH) * 0.12);
+  // 名称用フォントサイズ: 手動指定 (m) があればそれを 100 倍して viewBox 単位に換算。
+  // 未指定なら viewBox 単位の 12% を上限とし、極端に小さい区画でも 4 単位は確保。
+  const nameFont =
+    z.nameFontSize !== undefined
+      ? Math.max(4, z.nameFontSize * 100)
+      : Math.max(4, Math.min(vbW, vbH) * 0.12);
+  // 表示名の配置位置を SVG 属性へ変換
+  const alignH = getZoneNameAlignH(z);
+  const alignV = getZoneNameAlignV(z);
+  const NAME_PAD = 4; // viewBox 単位の内側余白
+  const textX = alignH === 'left' ? NAME_PAD : alignH === 'right' ? vbW - NAME_PAD : vbW / 2;
+  const textAnchor = alignH === 'left' ? 'start' : alignH === 'right' ? 'end' : 'middle';
+  const textY = alignV === 'top' ? NAME_PAD : alignV === 'bottom' ? vbH - NAME_PAD : vbH / 2;
+  const dominantBaseline =
+    alignV === 'top' ? 'hanging' : alignV === 'bottom' ? 'text-after-edge' : 'central';
 
   const showName = settings.showZoneName && z.showName !== false;
 
@@ -65,7 +84,7 @@ const renderZoneSvg = (p: Placement, settings: PrintSettings, mmPerMeter: number
     : '';
 
   const textSvg = showName
-    ? `<text x="${vbW / 2}" y="${vbH / 2}" text-anchor="middle" dominant-baseline="central" font-size="${nameFont}" fill="#000" style="font-weight:600;">${escapeHtml(z.name)}</text>`
+    ? `<text x="${textX}" y="${textY}" text-anchor="${textAnchor}" dominant-baseline="${dominantBaseline}" font-size="${nameFont}" fill="${escapeHtml(getZoneNameColor(z))}" style="font-weight:600;">${escapeHtml(getZoneDisplayText(z))}</text>`
     : '';
 
   return `<svg

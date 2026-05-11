@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Rect, Group, Text } from 'react-konva';
 import { Paper, Stack, Text as MText } from '@mantine/core';
 import type { ZoneType } from '../../shared/types.ts';
-import { getZoneBorder } from '../../shared/types.ts';
+import {
+  getZoneBorder,
+  getZoneDisplayText,
+  getZoneNameAlignH,
+  getZoneNameAlignV,
+  getZoneNameColor,
+} from '../../shared/types.ts';
 import ZoneImageKonva from '../../shared/components/ZoneImageKonva.tsx';
 
 type Props = {
@@ -88,12 +94,17 @@ const ZonePreview = ({ zone }: Props) => {
                 })()}
                 {zone.showName !== false && (
                   <Text
-                    text={zone.name}
+                    text={getZoneDisplayText(zone)}
+                    fill={getZoneNameColor(zone)}
                     width={zoneWidthPx}
                     height={zoneHeightPx}
-                    align="center"
-                    verticalAlign="middle"
-                    fontSize={Math.max(10, Math.min(zoneWidthPx, zoneHeightPx) / 6)}
+                    align={getZoneNameAlignH(zone)}
+                    verticalAlign={getZoneNameAlignV(zone)}
+                    fontSize={
+                      zone.nameFontSize !== undefined
+                        ? Math.max(4, zone.nameFontSize * pxPerMeter)
+                        : Math.max(10, Math.min(zoneWidthPx, zoneHeightPx) / 6)
+                    }
                     padding={4}
                   />
                 )}

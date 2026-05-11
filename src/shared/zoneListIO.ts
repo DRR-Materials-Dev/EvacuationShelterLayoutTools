@@ -53,6 +53,42 @@ const parseZone = (raw: unknown, index: number): ZoneType => {
     }
     zone.showName = raw.showName;
   }
+  if (raw.displayNameSameAsName !== undefined) {
+    if (typeof raw.displayNameSameAsName !== 'boolean') {
+      throw new ZoneListParseError(`zones[${index}].displayNameSameAsName が不正です`);
+    }
+    zone.displayNameSameAsName = raw.displayNameSameAsName;
+  }
+  if (raw.displayName !== undefined) {
+    if (typeof raw.displayName !== 'string') {
+      throw new ZoneListParseError(`zones[${index}].displayName が不正です`);
+    }
+    zone.displayName = raw.displayName;
+  }
+  if (raw.nameColor !== undefined) {
+    if (typeof raw.nameColor !== 'string') {
+      throw new ZoneListParseError(`zones[${index}].nameColor が不正です`);
+    }
+    zone.nameColor = raw.nameColor;
+  }
+  if (raw.nameFontSize !== undefined) {
+    if (typeof raw.nameFontSize !== 'number' || !(raw.nameFontSize > 0)) {
+      throw new ZoneListParseError(`zones[${index}].nameFontSize が不正です`);
+    }
+    zone.nameFontSize = raw.nameFontSize;
+  }
+  if (raw.nameAlignH !== undefined) {
+    if (raw.nameAlignH !== 'left' && raw.nameAlignH !== 'center' && raw.nameAlignH !== 'right') {
+      throw new ZoneListParseError(`zones[${index}].nameAlignH が不正です`);
+    }
+    zone.nameAlignH = raw.nameAlignH;
+  }
+  if (raw.nameAlignV !== undefined) {
+    if (raw.nameAlignV !== 'top' && raw.nameAlignV !== 'middle' && raw.nameAlignV !== 'bottom') {
+      throw new ZoneListParseError(`zones[${index}].nameAlignV が不正です`);
+    }
+    zone.nameAlignV = raw.nameAlignV;
+  }
   if (raw.showBorder !== undefined) {
     if (typeof raw.showBorder !== 'boolean') {
       throw new ZoneListParseError(`zones[${index}].showBorder が不正です`);

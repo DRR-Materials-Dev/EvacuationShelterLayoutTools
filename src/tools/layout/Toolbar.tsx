@@ -1,5 +1,9 @@
 import { useRef } from 'react';
 import { Button, Group, Tooltip } from '@mantine/core';
+
+// メニュー画面のツールアイコン色に合わせたボタン背景色
+const ZONE_LIST_BTN_BG = '#D0EBFF'; // 避難所レイアウトのアイコン色（blue.1）
+const LAYOUT_BTN_BG = '#C3FAE8'; // 区画エディタのアイコン色（teal.1）
 import {
   IconPhoto,
   IconRuler,
@@ -148,6 +152,7 @@ const Toolbar = ({
             variant="default"
             leftSection={<IconList size={16} />}
             onClick={() => listInputRef.current?.click()}
+            style={{ backgroundColor: ZONE_LIST_BTN_BG }}
           >
             区画リスト読込
           </Button>
@@ -158,6 +163,7 @@ const Toolbar = ({
             variant="default"
             leftSection={<IconRestore size={16} />}
             onClick={onResetZoneList}
+            style={{ backgroundColor: ZONE_LIST_BTN_BG }}
           >
             区画リスト初期化
           </Button>
@@ -179,6 +185,7 @@ const Toolbar = ({
             variant="default"
             leftSection={<IconUpload size={16} />}
             onClick={() => layoutInputRef.current?.click()}
+            style={{ backgroundColor: LAYOUT_BTN_BG }}
           >
             レイアウト読込
           </Button>
@@ -196,7 +203,12 @@ const Toolbar = ({
         />
 
         <Tooltip label="レイアウト (.layout.json) を保存">
-          <Button variant="default" leftSection={<IconDeviceFloppy size={16} />} onClick={onSaveLayout}>
+          <Button
+            variant="default"
+            leftSection={<IconDeviceFloppy size={16} />}
+            onClick={onSaveLayout}
+            style={{ backgroundColor: LAYOUT_BTN_BG }}
+          >
             レイアウト保存
           </Button>
         </Tooltip>

@@ -26,7 +26,7 @@ const ZoneListPane = ({ zones, selectedId, onSelect, onAdd, onDuplicate, onRemov
     >
       <Group p="xs" justify="space-between">
         <Text fw={500} size="sm">
-          区画一覧（{zones.length}）
+          区画リスト（{zones.length}）
         </Text>
         <Tooltip label="新規区画を追加">
           <Button size="xs" leftSection={<IconPlus size={14} />} onClick={onAdd}>

@@ -15,7 +15,13 @@ import useImage from 'use-image';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { Box } from 'konva/lib/shapes/Transformer';
 import type { PlacedZone, TextBlock, ZoneType } from '../../shared/types.ts';
-import { getZoneBorder } from '../../shared/types.ts';
+import {
+  getZoneBorder,
+  getZoneDisplayText,
+  getZoneNameAlignH,
+  getZoneNameAlignV,
+  getZoneNameColor,
+} from '../../shared/types.ts';
 import ZoneImageKonva from '../../shared/components/ZoneImageKonva.tsx';
 import { snapPoint, snapValue } from '../../shared/snap.ts';
 import { useUserSettings } from '../../shared/settings.tsx';
@@ -332,7 +338,8 @@ const ZoneItem = ({
   const xPx = item.x * scaleRatio;
   const yPx = item.y * scaleRatio;
   const color = type?.color ?? '#cccccc';
-  const name = type?.name ?? '(不明な区画)';
+  const displayText = type ? getZoneDisplayText(type) : '(不明な区画)';
+  const nameColor = type ? getZoneNameColor(type) : '#000000';
   const resizable = type?.resizable ?? false;
   const border = type ? getZoneBorder(type) : { show: true, color: '#222222', widthPx: 1 };
   // 選択中は青枠で上書き、未選択時は区画の枠線設定に従う
@@ -403,12 +410,17 @@ const ZoneItem = ({
         )}
         {type?.showName !== false && (
           <Text
-            text={name}
-            fontSize={Math.max(10, Math.min(widthPx, heightPx) / 3)}
+            text={displayText}
+            fill={nameColor}
+            fontSize={
+              type?.nameFontSize !== undefined
+                ? Math.max(4, type.nameFontSize * scaleRatio)
+                : Math.max(10, Math.min(widthPx, heightPx) / 3)
+            }
             width={widthPx}
             height={heightPx}
-            align="center"
-            verticalAlign="middle"
+            align={type ? getZoneNameAlignH(type) : 'center'}
+            verticalAlign={type ? getZoneNameAlignV(type) : 'middle'}
             padding={4}
             listening={false}
           />

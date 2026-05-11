@@ -27,8 +27,20 @@ export type ZoneType = {
   height: number; // メートル単位
   color: string; // #RRGGBB
   resizable: boolean;
-  /** 配置・印刷時に区画名を表示するか。未定義は true として扱う（後方互換）。 */
+  /** 配置・印刷時に区画表示名を表示するか。未定義は true として扱う（後方互換）。 */
   showName?: boolean;
+  /** 区画名と区画表示名を同じにするか。未定義は true として扱う。false の場合は displayName を使用。 */
+  displayNameSameAsName?: boolean;
+  /** displayNameSameAsName が false のときに使用される表示名。未定義は '' 扱い。 */
+  displayName?: string;
+  /** 表示名の文字色 (#RRGGBB)。未定義は '#000000'。 */
+  nameColor?: string;
+  /** 表示名のフォントサイズ（メートル単位、テキストの高さ）。未定義は自動サイズ。 */
+  nameFontSize?: number;
+  /** 表示名の横位置。未定義は 'center'。 */
+  nameAlignH?: 'left' | 'center' | 'right';
+  /** 表示名の縦位置。未定義は 'middle'。 */
+  nameAlignV?: 'top' | 'middle' | 'bottom';
   /** 枠線を描画するか。未定義は true として扱う。 */
   showBorder?: boolean;
   /** 枠線の色 (#RRGGBB)。未定義は '#333333'。 */
@@ -115,3 +127,22 @@ export const getZoneBorder = (z: ZoneType): { show: boolean; color: string; widt
   color: z.borderColor ?? '#333333',
   widthPx: typeof z.borderWidthPx === 'number' && z.borderWidthPx >= 0 ? z.borderWidthPx : 1,
 });
+
+/**
+ * 配置・印刷時に区画上へ描画するテキストを返す。
+ * - displayNameSameAsName が false なら displayName を使用（未定義時は空文字）
+ * - そうでなければ name を使用
+ */
+export const getZoneDisplayText = (z: ZoneType): string =>
+  z.displayNameSameAsName === false ? (z.displayName ?? '') : z.name;
+
+/** 表示名の文字色。未定義時は '#000000'。 */
+export const getZoneNameColor = (z: ZoneType): string => z.nameColor ?? '#000000';
+
+/** 表示名の横位置。未定義時は 'center'。 */
+export const getZoneNameAlignH = (z: ZoneType): 'left' | 'center' | 'right' =>
+  z.nameAlignH ?? 'center';
+
+/** 表示名の縦位置。未定義時は 'middle'。 */
+export const getZoneNameAlignV = (z: ZoneType): 'top' | 'middle' | 'bottom' =>
+  z.nameAlignV ?? 'middle';
