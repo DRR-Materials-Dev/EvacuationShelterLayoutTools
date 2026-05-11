@@ -1,7 +1,24 @@
 import { useRef } from 'react';
-import { Button, FileButton, Group, NumberInput, Select, Stack, Text } from '@mantine/core';
-import { IconUpload, IconTrash } from '@tabler/icons-react';
+import {
+  ActionIcon,
+  Button,
+  FileButton,
+  Group,
+  NumberInput,
+  Select,
+  Stack,
+  Text,
+} from '@mantine/core';
+import { IconMinus, IconPlus, IconTrash, IconUpload } from '@tabler/icons-react';
 import type { ImageFitMode, ZoneImage } from '../../shared/types.ts';
+
+const SCALE_MIN = 0.1;
+const SCALE_MAX = 100;
+const SCALE_STEP = 0.1;
+
+const roundScale = (v: number): number => Math.round(v * 1000) / 1000;
+const clampScale = (v: number): number =>
+  Math.max(SCALE_MIN, Math.min(SCALE_MAX, roundScale(v)));
 
 type Props = {
   image: ZoneImage | undefined;
@@ -86,24 +103,18 @@ const ImageControls = ({ image, onChange }: Props) => {
           />
 
           {image.fitMode === 'manual' && (
-            <Group grow>
-              <NumberInput
+            <Group grow align="flex-start">
+              <ScaleInput
                 label="横方向の縮尺"
                 description="1.0 = 区画の幅と同じ"
                 value={image.scaleX ?? 1}
-                onChange={(v) => updateImage({ scaleX: typeof v === 'number' ? v : 1 })}
-                min={0.01}
-                step={0.1}
-                decimalScale={3}
+                onChange={(v) => updateImage({ scaleX: v })}
               />
-              <NumberInput
+              <ScaleInput
                 label="縦方向の縮尺"
                 description="1.0 = 区画の高さと同じ"
                 value={image.scaleY ?? 1}
-                onChange={(v) => updateImage({ scaleY: typeof v === 'number' ? v : 1 })}
-                min={0.01}
-                step={0.1}
-                decimalScale={3}
+                onChange={(v) => updateImage({ scaleY: v })}
               />
             </Group>
           )}
@@ -129,5 +140,59 @@ const ImageControls = ({ image, onChange }: Props) => {
 };
 
 const clampRotation = (v: number): number => Math.max(-180, Math.min(180, Math.round(v)));
+
+type ScaleInputProps = {
+  label: string;
+  description: string;
+  value: number;
+  onChange: (v: number) => void;
+};
+
+const ScaleInput = ({ label, description, value, onChange }: ScaleInputProps) => {
+  const commit = (raw: number | string) => {
+    const num = typeof raw === 'number' ? raw : Number.parseFloat(raw);
+    if (!Number.isFinite(num)) return;
+    onChange(clampScale(num));
+  };
+  const step = (delta: number) => onChange(clampScale(value + delta));
+
+  return (
+    <Stack gap={4}>
+      <NumberInput
+        label={label}
+        description={description}
+        value={value}
+        onChange={commit}
+        min={SCALE_MIN}
+        max={SCALE_MAX}
+        step={SCALE_STEP}
+        decimalScale={3}
+      />
+      <Group gap="xs" justify="center" wrap="nowrap">
+        <ActionIcon
+          variant="default"
+          size="lg"
+          onClick={() => step(-SCALE_STEP)}
+          aria-label="縮尺を 0.1 減らす"
+          disabled={value <= SCALE_MIN}
+        >
+          <IconMinus size={16} />
+        </ActionIcon>
+        <Text size="sm" ta="center" style={{ minWidth: 56, fontVariantNumeric: 'tabular-nums' }}>
+          {value.toFixed(1)}
+        </Text>
+        <ActionIcon
+          variant="default"
+          size="lg"
+          onClick={() => step(SCALE_STEP)}
+          aria-label="縮尺を 0.1 増やす"
+          disabled={value >= SCALE_MAX}
+        >
+          <IconPlus size={16} />
+        </ActionIcon>
+      </Group>
+    </Stack>
+  );
+};
 
 export default ImageControls;

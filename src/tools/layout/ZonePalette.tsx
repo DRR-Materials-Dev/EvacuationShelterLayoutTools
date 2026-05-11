@@ -26,7 +26,7 @@ const ZonePalette = ({ zoneList }: Props) => {
     >
       <Stack gap={4} p="sm">
         <Title order={5} m={0}>
-          区画一覧
+          区画リスト
         </Title>
         <Text size="xs" c="dimmed">
           ドラッグして配置
