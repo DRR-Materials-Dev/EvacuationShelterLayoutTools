@@ -3,7 +3,7 @@
 避難所の運営訓練や検討に使用するための、Web ベースのレイアウト検討ツール集です。
 2026-05 のオーバーホールで、メニュー画面から呼び出せる **3 つの独立ツール** 構成になりました。
 
-[避難所レイアウト検討ツール（GitHub Pages）](https://grandge.github.io/EvacuationShelterLayoutTools/)
+[避難所レイアウト検討ツール（GitHub Pages）](https://drr-materials-dev.github.io/EvacuationShelterLayoutTools/)
 
 仕様と設計の詳細は [避難所レイアウト検討ツール仕様書.md](避難所レイアウト検討ツール仕様書.md) / [設計書.md](設計書.md) を参照してください。
 
