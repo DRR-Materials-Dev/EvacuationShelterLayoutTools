@@ -91,7 +91,28 @@ export type TextBlock = {
   color: string;
 };
 
-export type PlacedItem = PlacedZone | TextBlock;
+/**
+ * ゾーン（多角形範囲）。区画 (PlacedZone) とは別概念で、3 点以上の多角形で
+ * 範囲を囲み、内包される区画の居住者人数を集計する。設計書 §8.1.3。
+ */
+export type PolygonZone = {
+  kind: 'polygon';
+  id: string;
+  /** 頂点（メートル単位）。3 点以上。 */
+  points: { x: number; y: number }[];
+  label?: string;
+  /** 枠線の種類 */
+  strokeStyle: 'solid' | 'dashed' | 'dotted';
+  strokeColor: string; // #RRGGBB
+  strokeWidthPx: number;
+  /** 塗りつぶし色と透明度 */
+  fillColor: string; // #RRGGBB
+  fillOpacity: number; // 0.0 〜 1.0
+  /** ゾーン内居住者カウントを表示するか */
+  showCount: boolean;
+};
+
+export type PlacedItem = PlacedZone | TextBlock | PolygonZone;
 
 /**
  * 区画リストファイル (.list.json) のスキーマ。

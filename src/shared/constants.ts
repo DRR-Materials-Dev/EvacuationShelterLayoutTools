@@ -103,3 +103,14 @@ export const DEFAULT_RESIDENT_TYPE_IDS: ReadonlySet<string> = new Set(
 
 /** デフォルト以外にユーザーが追加できる居住者種類の上限。 */
 export const MAX_ADDITIONAL_RESIDENT_TYPES = 3;
+
+/* ---------- ゾーン（多角形）の既定スタイル（設計書 §8.1.3） ---------- */
+
+export const DEFAULT_POLYGON_STYLE = {
+  strokeStyle: 'solid' as const,
+  strokeColor: '#1565c0',
+  strokeWidthPx: 2,
+  fillColor: '#1565c0',
+  fillOpacity: 0.3,
+  showCount: true,
+};

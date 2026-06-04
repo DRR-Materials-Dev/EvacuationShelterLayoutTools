@@ -1,4 +1,12 @@
-import type { LayoutFile, PlacedItem, PlacedZone, ResidentType, TextBlock } from './types.ts';
+import type {
+  LayoutFile,
+  PlacedItem,
+  PlacedZone,
+  PolygonZone,
+  ResidentType,
+  TextBlock,
+} from './types.ts';
+import { DEFAULT_POLYGON_STYLE } from './constants.ts';
 import { parseZoneList, ZoneListParseError } from './zoneListIO.ts';
 
 export const LAYOUT_VERSION = 1;
@@ -83,12 +91,53 @@ const parseTextBlock = (raw: Record<string, unknown>, index: number): TextBlock 
   return { kind: 'text', id, text, x, y, fontSize, scaleX, scaleY, rotation, color };
 };
 
+const parsePolygonZone = (raw: Record<string, unknown>, index: number): PolygonZone => {
+  const { id, points } = raw;
+  if (typeof id !== 'string') {
+    throw new LayoutParseError(`placed[${index}].id が不正です`);
+  }
+  if (!Array.isArray(points) || points.length < 3) {
+    throw new LayoutParseError(`placed[${index}].points が不正です（3 点以上必要）`);
+  }
+  const parsedPoints = points.map((p, pi) => {
+    if (!isObject(p) || typeof p.x !== 'number' || typeof p.y !== 'number') {
+      throw new LayoutParseError(`placed[${index}].points[${pi}] が不正です`);
+    }
+    return { x: p.x, y: p.y };
+  });
+  const strokeStyle =
+    raw.strokeStyle === 'dashed' || raw.strokeStyle === 'dotted' || raw.strokeStyle === 'solid'
+      ? raw.strokeStyle
+      : DEFAULT_POLYGON_STYLE.strokeStyle;
+  const out: PolygonZone = {
+    kind: 'polygon',
+    id,
+    points: parsedPoints,
+    strokeStyle,
+    strokeColor:
+      typeof raw.strokeColor === 'string' ? raw.strokeColor : DEFAULT_POLYGON_STYLE.strokeColor,
+    strokeWidthPx:
+      typeof raw.strokeWidthPx === 'number' && raw.strokeWidthPx >= 0
+        ? raw.strokeWidthPx
+        : DEFAULT_POLYGON_STYLE.strokeWidthPx,
+    fillColor: typeof raw.fillColor === 'string' ? raw.fillColor : DEFAULT_POLYGON_STYLE.fillColor,
+    fillOpacity:
+      typeof raw.fillOpacity === 'number' && raw.fillOpacity >= 0 && raw.fillOpacity <= 1
+        ? raw.fillOpacity
+        : DEFAULT_POLYGON_STYLE.fillOpacity,
+    showCount: typeof raw.showCount === 'boolean' ? raw.showCount : DEFAULT_POLYGON_STYLE.showCount,
+  };
+  if (typeof raw.label === 'string') out.label = raw.label;
+  return out;
+};
+
 const parsePlacedItem = (raw: unknown, index: number): PlacedItem => {
   if (!isObject(raw)) {
     throw new LayoutParseError(`placed[${index}] がオブジェクトではありません`);
   }
   if (raw.kind === 'zone') return parsePlacedZone(raw, index);
   if (raw.kind === 'text') return parseTextBlock(raw, index);
+  if (raw.kind === 'polygon') return parsePolygonZone(raw, index);
   throw new LayoutParseError(`placed[${index}].kind が不明です: ${String(raw.kind)}`);
 };
 
