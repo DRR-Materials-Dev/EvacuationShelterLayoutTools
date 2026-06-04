@@ -1,4 +1,4 @@
-import type { LayoutFile, PlacedItem, PlacedZone, TextBlock } from './types.ts';
+import type { LayoutFile, PlacedItem, PlacedZone, ResidentType, TextBlock } from './types.ts';
 import { parseZoneList, ZoneListParseError } from './zoneListIO.ts';
 
 export const LAYOUT_VERSION = 1;
@@ -31,7 +31,30 @@ const parsePlacedZone = (raw: Record<string, unknown>, index: number): PlacedZon
   const out: PlacedZone = { kind: 'zone', id, typeId, x, y, rotation };
   if (typeof raw.width === 'number') out.width = raw.width;
   if (typeof raw.height === 'number') out.height = raw.height;
+  if (isObject(raw.residents)) {
+    const residents: Record<string, number> = {};
+    for (const [k, v] of Object.entries(raw.residents)) {
+      if (typeof v === 'number' && Number.isFinite(v) && v > 0) residents[k] = v;
+    }
+    if (Object.keys(residents).length > 0) out.residents = residents;
+  }
   return out;
+};
+
+/** residentTypes フィールドを検証して返す。不正・未定義なら undefined。 */
+const parseResidentTypes = (raw: unknown): ResidentType[] | undefined => {
+  if (!Array.isArray(raw)) return undefined;
+  const out: ResidentType[] = [];
+  for (const item of raw) {
+    if (!isObject(item)) continue;
+    if (typeof item.id !== 'string' || typeof item.name !== 'string') continue;
+    out.push({
+      id: item.id,
+      name: item.name,
+      color: typeof item.color === 'string' ? item.color : '#888888',
+    });
+  }
+  return out.length > 0 ? out : undefined;
 };
 
 const parseTextBlock = (raw: Record<string, unknown>, index: number): TextBlock => {
@@ -123,13 +146,16 @@ export const parseLayout = (json: string): LayoutFile => {
   }
   const placed = data.placed.map(parsePlacedItem);
 
-  return {
+  const layout: LayoutFile = {
     version: LAYOUT_VERSION,
     scaleRatio: data.scaleRatio,
     background,
     zoneList,
     placed,
   };
+  const residentTypes = parseResidentTypes(data.residentTypes);
+  if (residentTypes) layout.residentTypes = residentTypes;
+  return layout;
 };
 
 export const serializeLayout = (layout: LayoutFile): string => JSON.stringify(layout, null, 2);

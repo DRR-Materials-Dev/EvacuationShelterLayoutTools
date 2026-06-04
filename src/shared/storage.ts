@@ -1,5 +1,5 @@
 import { get, set, del } from 'idb-keyval';
-import type { PlacedItem, UserSettings, ZoneList } from './types.ts';
+import type { PlacedItem, ResidentType, UserSettings, ZoneList } from './types.ts';
 import { DEFAULT_USER_SETTINGS } from './types.ts';
 
 /**
@@ -75,6 +75,8 @@ const KEY_LAYOUT_STATE = 'evac-tool/layout/state';
 export type StoredLayoutState = {
   scaleRatio: number;
   placed: PlacedItem[];
+  /** 居住者の種類定義（設計書 §8.1.1）。旧データには無いため任意。 */
+  residentTypes?: ResidentType[];
 };
 
 export const getStoredLayoutState = (): StoredLayoutState | null => {
@@ -84,7 +86,14 @@ export const getStoredLayoutState = (): StoredLayoutState | null => {
     const parsed: unknown = JSON.parse(raw);
     if (!isObject(parsed)) return null;
     if (typeof parsed.scaleRatio !== 'number' || !Array.isArray(parsed.placed)) return null;
-    return { scaleRatio: parsed.scaleRatio, placed: parsed.placed as PlacedItem[] };
+    const out: StoredLayoutState = {
+      scaleRatio: parsed.scaleRatio,
+      placed: parsed.placed as PlacedItem[],
+    };
+    if (Array.isArray(parsed.residentTypes)) {
+      out.residentTypes = parsed.residentTypes as ResidentType[];
+    }
+    return out;
   } catch {
     return null;
   }

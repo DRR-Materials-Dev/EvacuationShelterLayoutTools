@@ -21,6 +21,7 @@ import {
   getZoneNameAlignH,
   getZoneNameAlignV,
   getZoneNameColor,
+  getZoneResidentTotal,
 } from '../../shared/types.ts';
 import ZoneImageKonva from '../../shared/components/ZoneImageKonva.tsx';
 import { snapPoint, snapValue } from '../../shared/snap.ts';
@@ -341,6 +342,7 @@ const ZoneItem = ({
   const displayText = type ? getZoneDisplayText(type) : '(不明な区画)';
   const nameColor = type ? getZoneNameColor(type) : '#000000';
   const resizable = type?.resizable ?? false;
+  const residentTotal = getZoneResidentTotal(item);
   const border = type ? getZoneBorder(type) : { show: true, color: '#222222', widthPx: 1 };
   // 選択中は青枠で上書き、未選択時は区画の枠線設定に従う
   const strokeColor = isSelected ? '#1565c0' : border.show ? border.color : undefined;
@@ -422,6 +424,23 @@ const ZoneItem = ({
             align={type ? getZoneNameAlignH(type) : 'center'}
             verticalAlign={type ? getZoneNameAlignV(type) : 'middle'}
             padding={4}
+            listening={false}
+          />
+        )}
+        {residentTotal > 0 && (
+          <Text
+            text={`${residentTotal}人`}
+            fill="#000000"
+            stroke="#ffffff"
+            strokeWidth={2}
+            fillAfterStrokeEnabled
+            fontStyle="bold"
+            fontSize={Math.max(9, Math.min(widthPx, heightPx) / 5)}
+            width={widthPx}
+            height={heightPx}
+            align="right"
+            verticalAlign="bottom"
+            padding={3}
             listening={false}
           />
         )}

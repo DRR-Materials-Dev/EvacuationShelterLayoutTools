@@ -18,6 +18,7 @@ import {
   IconRestore,
   IconSettings,
   IconPhotoDown,
+  IconUsers,
 } from '@tabler/icons-react';
 
 type Props = {
@@ -29,6 +30,7 @@ type Props = {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onAddText: () => void;
+  onOpenResidentTypes: () => void;
   onRemoveSelected: () => void;
   onClearAll: () => void;
   onSaveLayout: () => void;
@@ -48,6 +50,7 @@ const Toolbar = ({
   onZoomIn,
   onZoomOut,
   onAddText,
+  onOpenResidentTypes,
   onRemoveSelected,
   onClearAll,
   onSaveLayout,
@@ -126,6 +129,16 @@ const Toolbar = ({
           onClick={onAddText}
         >
           {isAddingText ? 'テキスト配置中…' : 'テキスト'}
+        </Button>
+      </Tooltip>
+
+      <Tooltip label="居住者の種類（性質）を編集">
+        <Button
+          variant="default"
+          leftSection={<IconUsers size={16} />}
+          onClick={onOpenResidentTypes}
+        >
+          居住者種類
         </Button>
       </Tooltip>
 

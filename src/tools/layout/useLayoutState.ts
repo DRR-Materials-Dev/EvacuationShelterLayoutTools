@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { DEFAULT_ZONE_LIST, INITIAL_SCALE_RATIO } from '../../shared/constants.ts';
-import type { LayoutFile, PlacedItem, PlacedZone, TextBlock, ZoneList } from '../../shared/types.ts';
+import {
+  DEFAULT_RESIDENT_TYPES,
+  DEFAULT_ZONE_LIST,
+  INITIAL_SCALE_RATIO,
+} from '../../shared/constants.ts';
+import type {
+  LayoutFile,
+  PlacedItem,
+  PlacedZone,
+  ResidentType,
+  TextBlock,
+  ZoneList,
+} from '../../shared/types.ts';
 import {
   clearStoredBackground,
   clearStoredLayoutState,
@@ -22,6 +33,7 @@ export type LayoutState = {
   stagePos: Point;
   zoneList: ZoneList;
   placed: PlacedItem[];
+  residentTypes: ResidentType[];
   selectedId: string | null;
   isScaleMode: boolean;
   scalePoints: Point[]; // world-px coords for scale calibration markers
@@ -40,6 +52,10 @@ export type LayoutActions = {
   addPlacedZone: (typeId: string, xMeters: number, yMeters: number) => void;
   addText: (xMeters: number, yMeters: number, text: string, fontSize: number, color: string) => void;
   updatePlaced: (id: string, attrs: Partial<PlacedItem>) => void;
+  /** 居住者種類定義を置き換える（編集モーダルからの保存）。削除された種類の人数も配置済み区画から除去する。 */
+  setResidentTypes: (types: ResidentType[]) => void;
+  /** 指定した配置済み区画の居住者人数を設定する。 */
+  setZoneResidents: (id: string, residents: Record<string, number>) => void;
   removePlaced: (id: string) => void;
   clearPlaced: () => void;
   clearAll: () => void;
@@ -62,6 +78,9 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
   const [stagePos, setStagePos] = useState<Point>({ x: 0, y: 0 });
   const [zoneList, setZoneListState] = useState<ZoneList>(DEFAULT_ZONE_LIST);
   const [placed, setPlaced] = useState<PlacedItem[]>(storedLayout?.placed ?? []);
+  const [residentTypes, setResidentTypesState] = useState<ResidentType[]>(
+    storedLayout?.residentTypes ?? DEFAULT_RESIDENT_TYPES,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isScaleMode, setIsScaleMode] = useState<boolean>(false);
   const [scalePoints, setScalePoints] = useState<Point[]>([]);
@@ -77,10 +96,10 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     });
   }, []);
 
-  // 配置済み + 縮尺の永続化
+  // 配置済み + 縮尺 + 居住者種類の永続化
   useEffect(() => {
-    setStoredLayoutState({ scaleRatio, placed });
-  }, [scaleRatio, placed]);
+    setStoredLayoutState({ scaleRatio, placed, residentTypes });
+  }, [scaleRatio, placed, residentTypes]);
 
   /* ---------- 個別アクション ---------- */
 
@@ -144,6 +163,45 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     );
   }, []);
 
+  const setResidentTypes = useCallback((types: ResidentType[]) => {
+    setResidentTypesState(types);
+    // 削除された種類の人数を配置済み区画から除去する
+    const validIds = new Set(types.map((t) => t.id));
+    setPlaced((prev) =>
+      prev.map((p) => {
+        if (p.kind !== 'zone' || !p.residents) return p;
+        const filtered: Record<string, number> = {};
+        let changed = false;
+        for (const [typeId, n] of Object.entries(p.residents)) {
+          if (validIds.has(typeId)) filtered[typeId] = n;
+          else changed = true;
+        }
+        if (!changed) return p;
+        const next: PlacedZone = { ...p };
+        if (Object.keys(filtered).length > 0) next.residents = filtered;
+        else delete next.residents;
+        return next;
+      }),
+    );
+  }, []);
+
+  const setZoneResidents = useCallback((id: string, residents: Record<string, number>) => {
+    // 0 以下を除去して保持。空になったら residents 自体を外す。
+    const cleaned: Record<string, number> = {};
+    for (const [typeId, n] of Object.entries(residents)) {
+      if (n > 0) cleaned[typeId] = n;
+    }
+    setPlaced((prev) =>
+      prev.map((p) => {
+        if (p.id !== id || p.kind !== 'zone') return p;
+        const next: PlacedZone = { ...p };
+        if (Object.keys(cleaned).length > 0) next.residents = cleaned;
+        else delete next.residents;
+        return next;
+      }),
+    );
+  }, []);
+
   const removePlaced = useCallback((id: string) => {
     setPlaced((prev) => prev.filter((p) => p.id !== id));
     setSelectedId((cur) => (cur === id ? null : cur));
@@ -188,6 +246,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
       void clearStoredBackground();
     }
     setPlaced(layout.placed);
+    setResidentTypesState(layout.residentTypes ?? DEFAULT_RESIDENT_TYPES);
     setSelectedId(null);
     setViewScale(1);
     setStagePos({ x: 0, y: 0 });
@@ -199,12 +258,13 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
       scaleRatio,
       zoneList,
       placed,
+      residentTypes,
     };
     if (background) {
       layout.background = background;
     }
     return layout;
-  }, [scaleRatio, zoneList, placed, background]);
+  }, [scaleRatio, zoneList, placed, background, residentTypes]);
 
   return {
     background,
@@ -213,6 +273,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     stagePos,
     zoneList,
     placed,
+    residentTypes,
     selectedId,
     isScaleMode,
     scalePoints,
@@ -228,6 +289,8 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     addPlacedZone,
     addText,
     updatePlaced,
+    setResidentTypes,
+    setZoneResidents,
     removePlaced,
     clearPlaced,
     clearAll,
