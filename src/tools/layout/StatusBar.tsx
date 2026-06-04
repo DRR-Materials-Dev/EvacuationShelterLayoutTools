@@ -1,13 +1,58 @@
-import { Group, Text } from '@mantine/core';
+import { Group, Text, Tooltip, Stack, ColorSwatch } from '@mantine/core';
+import type { ResidentType } from '../../shared/types.ts';
 
 type Props = {
   scaleRatio: number;
   viewScale: number;
   placedCount: number;
+  floorResidentTotal: number;
+  mapResidentTotal: number;
+  residentTypes: ResidentType[];
+  floorByType: Record<string, number>;
+  mapByType: Record<string, number>;
   message?: string | null;
 };
 
-const StatusBar = ({ scaleRatio, viewScale, placedCount, message }: Props) => {
+/** 居住者の種類別内訳をホバー表示するためのツールチップ中身。 */
+const ResidentBreakdown = ({
+  residentTypes,
+  byType,
+}: {
+  residentTypes: ResidentType[];
+  byType: Record<string, number>;
+}) => {
+  const rows = residentTypes.filter((rt) => (byType[rt.id] ?? 0) > 0);
+  if (rows.length === 0) {
+    return <Text size="xs">居住者は設定されていません</Text>;
+  }
+  return (
+    <Stack gap={2}>
+      {rows.map((rt) => (
+        <Group key={rt.id} gap={6} wrap="nowrap">
+          <ColorSwatch color={rt.color} size={12} />
+          <Text size="xs" style={{ flex: 1 }}>
+            {rt.name}
+          </Text>
+          <Text size="xs" fw={600}>
+            {byType[rt.id]} 人
+          </Text>
+        </Group>
+      ))}
+    </Stack>
+  );
+};
+
+const StatusBar = ({
+  scaleRatio,
+  viewScale,
+  placedCount,
+  floorResidentTotal,
+  mapResidentTotal,
+  residentTypes,
+  floorByType,
+  mapByType,
+  message,
+}: Props) => {
   return (
     <Group
       gap="lg"
@@ -33,6 +78,26 @@ const StatusBar = ({ scaleRatio, viewScale, placedCount, message }: Props) => {
         <Text size="xs" c="dimmed">
           配置数: {placedCount}
         </Text>
+        <Tooltip
+          label={<ResidentBreakdown residentTypes={residentTypes} byType={floorByType} />}
+          withArrow
+          position="top"
+          multiline
+        >
+          <Text size="xs" fw={600} style={{ cursor: 'help' }}>
+            居住者数（階層）: {floorResidentTotal} 人
+          </Text>
+        </Tooltip>
+        <Tooltip
+          label={<ResidentBreakdown residentTypes={residentTypes} byType={mapByType} />}
+          withArrow
+          position="top"
+          multiline
+        >
+          <Text size="xs" fw={600} style={{ cursor: 'help' }}>
+            居住者数（全体）: {mapResidentTotal} 人
+          </Text>
+        </Tooltip>
       </Group>
     </Group>
   );
