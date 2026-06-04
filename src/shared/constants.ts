@@ -1,4 +1,4 @@
-import type { ZoneList, ZoneType } from './types.ts';
+import type { ResidentType, ZoneList, ZoneType } from './types.ts';
 
 /**
  * デフォルトの標準区画。仕様書「区画」セクションをベースに、
@@ -81,3 +81,36 @@ export const DEFAULT_ZONE_LIST: ZoneList = {
  * 縮尺の初期値: 50 px = 1 m
  */
 export const INITIAL_SCALE_RATIO = 50;
+
+/* ---------- 居住者の性質（設計書 §8.1.1） ---------- */
+
+/**
+ * デフォルトの居住者種類 5 種。削除不可（表示名・色は変更可）。
+ * id はデフォルト判別に使うため固定。
+ */
+export const DEFAULT_RESIDENT_TYPES: ResidentType[] = [
+  { id: 'healthy', name: '健常者', color: '#1e88e5' }, // 青
+  { id: 'needs-care', name: '要配慮者', color: '#fb8c00' }, // 橙
+  { id: 'severe', name: '重症者/重病人', color: '#e53935' }, // 赤
+  { id: 'staff', name: '運営/自治体職員', color: '#43a047' }, // 緑
+  { id: 'volunteer', name: 'ボランティア', color: '#8e24aa' }, // 紫
+];
+
+/** デフォルト居住者種類の id 集合（削除不可判定に使用）。 */
+export const DEFAULT_RESIDENT_TYPE_IDS: ReadonlySet<string> = new Set(
+  DEFAULT_RESIDENT_TYPES.map((t) => t.id),
+);
+
+/** デフォルト以外にユーザーが追加できる居住者種類の上限。 */
+export const MAX_ADDITIONAL_RESIDENT_TYPES = 3;
+
+/* ---------- ゾーン（多角形）の既定スタイル（設計書 §8.1.3） ---------- */
+
+export const DEFAULT_POLYGON_STYLE = {
+  strokeStyle: 'solid' as const,
+  strokeColor: '#1565c0',
+  strokeWidthPx: 2,
+  fillColor: '#1565c0',
+  fillOpacity: 0.3,
+  showCount: true,
+};
