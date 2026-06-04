@@ -478,9 +478,10 @@ const LayoutPage = () => {
           <TextInput
             label="ファイル名"
             value={saveLayoutModal.name}
-            onChange={(e) =>
-              setSaveLayoutModal((prev) => ({ ...prev, name: e.currentTarget.value }))
-            }
+            onChange={(e) => {
+              const value = e.currentTarget.value;
+              setSaveLayoutModal((prev) => ({ ...prev, name: value }));
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleConfirmSaveLayout();
             }}

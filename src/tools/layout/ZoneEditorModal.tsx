@@ -89,7 +89,10 @@ const ZoneEditorModal = ({ opened, initialList, onClose, onApply, onSaveShared }
       <TextInput
         label="区画リスト名"
         value={list.name}
-        onChange={(e) => setList((prev) => ({ ...prev, name: e.currentTarget.value }))}
+        onChange={(e) => {
+          const value = e.currentTarget.value;
+          setList((prev) => ({ ...prev, name: value }));
+        }}
         mb="sm"
         description="共有リストに保存する際のファイル名になります。変更するとレイアウトの参照リスト名も更新されます。"
       />
