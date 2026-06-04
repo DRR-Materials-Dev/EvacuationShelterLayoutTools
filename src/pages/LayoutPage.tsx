@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useBlocker } from 'react-router-dom';
 import { Modal, Button, Group, Text, Stack } from '@mantine/core';
 import Konva from 'konva';
 import AppHeader from '../shared/components/AppHeader.tsx';
@@ -13,6 +14,7 @@ import ResidentTypesModal from '../tools/layout/ResidentTypesModal.tsx';
 import SelectionPanel from '../tools/layout/SelectionPanel.tsx';
 import PolygonPanel from '../tools/layout/PolygonPanel.tsx';
 import FloorTabs from '../tools/layout/FloorTabs.tsx';
+import ZoneEditorModal from '../tools/layout/ZoneEditorModal.tsx';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
 import { useLayoutState } from '../tools/layout/useLayoutState.ts';
 import { getZoneResidentTotal } from '../shared/types.ts';
@@ -37,7 +39,20 @@ const LayoutPage = () => {
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [residentTypesOpen, setResidentTypesOpen] = useState(false);
+  const [zoneEditorOpen, setZoneEditorOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  /* ---------- 区画リスト未保存時のナビゲーションガード（設計書 §8.2） ---------- */
+  const blocker = useBlocker(state.zoneListDirty);
+
+  useEffect(() => {
+    if (!state.zoneListDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [state.zoneListDirty]);
 
   /* ---------- 選択中の区画（居住者人数パネル用） ---------- */
   const selectedZone =
@@ -314,6 +329,7 @@ const LayoutPage = () => {
         onAddPolygon={handleToggleAddPolygon}
         onToggleShowZones={handleToggleShowZones}
         onOpenResidentTypes={() => setResidentTypesOpen(true)}
+        onOpenZoneEditor={() => setZoneEditorOpen(true)}
         onRemoveSelected={handleRemoveSelected}
         onClearAll={() => setClearAllConfirm(true)}
         onSaveLayout={handleSaveLayout}
@@ -405,6 +421,64 @@ const LayoutPage = () => {
           onSave={actions.setResidentTypes}
         />
       )}
+
+      {/* 区画追加・編集モーダル（開くたびに現在の区画リストで再マウント） */}
+      {zoneEditorOpen && (
+        <ZoneEditorModal
+          opened
+          initialList={state.zoneList}
+          onClose={() => setZoneEditorOpen(false)}
+          onApply={(list) => {
+            actions.applyZoneListEdits(list);
+            setStatusMessage('区画リストの編集を適用しました（共有リストには未保存）');
+          }}
+          onSaveShared={(list) => {
+            actions.saveSharedZoneList(list);
+            setStatusMessage(`区画リスト「${list.name}」を共有リストに保存しました`);
+          }}
+        />
+      )}
+
+      {/* 区画リスト未保存のナビゲーション警告 */}
+      <Modal
+        opened={blocker.state === 'blocked'}
+        onClose={() => blocker.state === 'blocked' && blocker.reset()}
+        title="区画リストが未保存です"
+        centered
+      >
+        <Stack>
+          <Text size="sm">
+            区画リストに、共有リストへ保存していない変更があります。このまま移動すると共有リストへの保存は行われません。
+          </Text>
+          <Group justify="flex-end" mt="md">
+            <Button
+              variant="default"
+              onClick={() => {
+                if (blocker.state === 'blocked') blocker.reset();
+              }}
+            >
+              キャンセル
+            </Button>
+            <Button
+              color="red"
+              variant="light"
+              onClick={() => {
+                if (blocker.state === 'blocked') blocker.proceed();
+              }}
+            >
+              保存せずに移動
+            </Button>
+            <Button
+              onClick={() => {
+                actions.markZoneListSaved();
+                if (blocker.state === 'blocked') blocker.proceed();
+              }}
+            >
+              保存して移動
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* テキスト編集モーダル (既存テキストのダブルクリック) */}
       {editingText && editingText.kind === 'text' && (

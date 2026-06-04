@@ -16,6 +16,7 @@ import {
   IconUpload,
   IconList,
   IconRestore,
+  IconPencil,
   IconSettings,
   IconPhotoDown,
   IconUsers,
@@ -38,6 +39,7 @@ type Props = {
   onAddPolygon: () => void;
   onToggleShowZones: () => void;
   onOpenResidentTypes: () => void;
+  onOpenZoneEditor: () => void;
   onRemoveSelected: () => void;
   onClearAll: () => void;
   onSaveLayout: () => void;
@@ -62,6 +64,7 @@ const Toolbar = ({
   onAddPolygon,
   onToggleShowZones,
   onOpenResidentTypes,
+  onOpenZoneEditor,
   onRemoveSelected,
   onClearAll,
   onSaveLayout,
@@ -198,6 +201,17 @@ const Toolbar = ({
       </Tooltip>
 
       <Group gap={4} ml="auto" wrap="nowrap">
+        <Tooltip label="区画の追加・編集（区画エディタを開く）">
+          <Button
+            variant="default"
+            leftSection={<IconPencil size={16} />}
+            onClick={onOpenZoneEditor}
+            style={{ backgroundColor: ZONE_LIST_BTN_BG }}
+          >
+            区画追加・編集
+          </Button>
+        </Tooltip>
+
         <Tooltip label="区画リスト (.list.json) を読み込む">
           <Button
             variant="default"
