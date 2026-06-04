@@ -12,6 +12,7 @@ import EditTextModal from '../tools/layout/EditTextModal.tsx';
 import ResidentTypesModal from '../tools/layout/ResidentTypesModal.tsx';
 import SelectionPanel from '../tools/layout/SelectionPanel.tsx';
 import PolygonPanel from '../tools/layout/PolygonPanel.tsx';
+import FloorTabs from '../tools/layout/FloorTabs.tsx';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
 import { useLayoutState } from '../tools/layout/useLayoutState.ts';
 import { getZoneResidentTotal } from '../shared/types.ts';
@@ -48,9 +49,14 @@ const LayoutPage = () => {
       ? (state.zoneList.zones.find((z) => z.id === selectedZone.typeId)?.name ?? '(不明な区画)')
       : '';
 
-  /* ---------- マップ全体の居住者数 ---------- */
-  const mapResidentTotal = state.placed.reduce(
+  /* ---------- 居住者数（階層・マップ全体） ---------- */
+  const floorResidentTotal = state.placed.reduce(
     (sum, p) => (p.kind === 'zone' ? sum + getZoneResidentTotal(p) : sum),
+    0,
+  );
+  const mapResidentTotal = state.floors.reduce(
+    (sum, f) =>
+      sum + f.placed.reduce((s, p) => (p.kind === 'zone' ? s + getZoneResidentTotal(p) : s), 0),
     0,
   );
 
@@ -211,7 +217,7 @@ const LayoutPage = () => {
   const handleClearAllConfirm = useCallback(() => {
     actions.clearAll();
     setClearAllConfirm(false);
-    setStatusMessage('全ての配置と背景画像を削除しました');
+    setStatusMessage('現在の階層の配置と背景画像を削除しました');
   }, [actions]);
 
   /* ---------- 区画リスト読み込み ---------- */
@@ -317,6 +323,15 @@ const LayoutPage = () => {
         onOpenSettings={() => setSettingsOpen(true)}
         onDownloadPng={handleDownloadPng}
       />
+      <FloorTabs
+        floors={state.floors}
+        activeFloorId={state.activeFloorId}
+        onSelect={actions.setActiveFloor}
+        onAdd={actions.addFloor}
+        onRename={actions.renameFloor}
+        onRemove={actions.removeFloor}
+        onMove={actions.moveFloor}
+      />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <ZonePalette zoneList={state.zoneList} />
         <Canvas
@@ -353,7 +368,8 @@ const LayoutPage = () => {
         scaleRatio={state.scaleRatio}
         viewScale={state.viewScale}
         placedCount={state.placed.length}
-        residentTotal={mapResidentTotal}
+        floorResidentTotal={floorResidentTotal}
+        mapResidentTotal={mapResidentTotal}
         message={statusMessage}
       />
 
@@ -436,7 +452,10 @@ const LayoutPage = () => {
         centered
       >
         <Stack>
-          <Text size="sm">配置されている区画・テキストと背景画像をすべて削除します。よろしいですか？</Text>
+          <Text size="sm">
+            現在の階層に配置されている区画・テキスト・ゾーンと、この階層の背景画像をすべて削除します。よろしいですか？
+            （他の階層は影響を受けません）
+          </Text>
           <Group justify="flex-end" mt="md">
             <Button variant="default" onClick={() => setClearAllConfirm(false)}>
               キャンセル

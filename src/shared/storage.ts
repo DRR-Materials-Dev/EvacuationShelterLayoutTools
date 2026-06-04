@@ -1,6 +1,7 @@
 import { get, set, del } from 'idb-keyval';
-import type { PlacedItem, ResidentType, UserSettings, ZoneList } from './types.ts';
+import type { Floor, ResidentType, UserSettings, ZoneList } from './types.ts';
 import { DEFAULT_USER_SETTINGS } from './types.ts';
+import { DEFAULT_RESIDENT_TYPES, DEFAULT_ZONE_LIST } from './constants.ts';
 
 /**
  * IndexedDB に保存される背景画像。
@@ -68,43 +69,65 @@ export const setStoredUserSettings = (s: UserSettings): void => {
   localStorage.setItem(KEY_USER_SETTINGS, JSON.stringify(s));
 };
 
-/* ---------- 避難所レイアウト固有ステート（LocalStorage） ---------- */
+/* ---------- 避難所レイアウト固有ステート（複数階層 / IndexedDB） ---------- */
 
-const KEY_LAYOUT_STATE = 'evac-tool/layout/state';
+// v2 の自動復元ステートは階層ごとに背景画像（base64）を含むため、
+// LocalStorage の 5MB 上限を避けて IndexedDB に保存する（設計書 §8.1.5）。
+const KEY_LAYOUT_STATE_V2 = 'evac-tool/layout/state-v2';
+// v1（単一階層）の旧ステート（LocalStorage）。一度だけ読み込んで移行する。
+const KEY_LAYOUT_STATE_LEGACY = 'evac-tool/layout/state';
 
 export type StoredLayoutState = {
-  scaleRatio: number;
-  placed: PlacedItem[];
-  /** 居住者の種類定義（設計書 §8.1.1）。旧データには無いため任意。 */
-  residentTypes?: ResidentType[];
+  floors: Floor[];
+  activeFloorId: string;
+  residentTypes: ResidentType[];
+  zoneListName: string;
 };
 
-export const getStoredLayoutState = (): StoredLayoutState | null => {
+export const getStoredLayoutState = (): Promise<StoredLayoutState | undefined> =>
+  get(KEY_LAYOUT_STATE_V2);
+
+export const setStoredLayoutState = (s: StoredLayoutState): Promise<void> =>
+  set(KEY_LAYOUT_STATE_V2, s);
+
+export const clearStoredLayoutState = (): Promise<void> => del(KEY_LAYOUT_STATE_V2);
+
+/**
+ * 旧 v1 ステート（LocalStorage の scaleRatio/placed + IndexedDB の単一背景）を
+ * v2 の単一階層へ移行する。移行後は旧キーを削除する。該当データが無ければ null。
+ */
+export const migrateLegacyLayoutState = async (): Promise<StoredLayoutState | null> => {
   try {
-    const raw = localStorage.getItem(KEY_LAYOUT_STATE);
+    const raw = localStorage.getItem(KEY_LAYOUT_STATE_LEGACY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
-    if (!isObject(parsed)) return null;
-    if (typeof parsed.scaleRatio !== 'number' || !Array.isArray(parsed.placed)) return null;
-    const out: StoredLayoutState = {
-      scaleRatio: parsed.scaleRatio,
-      placed: parsed.placed as PlacedItem[],
-    };
-    if (Array.isArray(parsed.residentTypes)) {
-      out.residentTypes = parsed.residentTypes as ResidentType[];
+    if (!isObject(parsed) || typeof parsed.scaleRatio !== 'number' || !Array.isArray(parsed.placed)) {
+      return null;
     }
-    return out;
+    const bg = await getStoredBackground();
+    const floor: Floor = {
+      id: 'floor-legacy-0',
+      name: '1F',
+      scaleRatio: parsed.scaleRatio,
+      placed: parsed.placed as Floor['placed'],
+    };
+    if (bg) floor.background = bg;
+    const migrated: StoredLayoutState = {
+      floors: [floor],
+      activeFloorId: floor.id,
+      residentTypes: Array.isArray(parsed.residentTypes)
+        ? (parsed.residentTypes as ResidentType[])
+        : DEFAULT_RESIDENT_TYPES,
+      zoneListName: DEFAULT_ZONE_LIST.name,
+    };
+    // 旧キーを掃除（背景の単一キーも v2 では floor に内包するため削除）
+    localStorage.removeItem(KEY_LAYOUT_STATE_LEGACY);
+    await clearStoredBackground();
+    await setStoredLayoutState(migrated);
+    return migrated;
   } catch {
     return null;
   }
-};
-
-export const setStoredLayoutState = (s: StoredLayoutState): void => {
-  localStorage.setItem(KEY_LAYOUT_STATE, JSON.stringify(s));
-};
-
-export const clearStoredLayoutState = (): void => {
-  localStorage.removeItem(KEY_LAYOUT_STATE);
 };
 
 /* ---------- 区画印刷の用紙・縮尺設定（LocalStorage） ---------- */

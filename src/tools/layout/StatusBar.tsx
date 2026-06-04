@@ -4,11 +4,19 @@ type Props = {
   scaleRatio: number;
   viewScale: number;
   placedCount: number;
-  residentTotal: number;
+  floorResidentTotal: number;
+  mapResidentTotal: number;
   message?: string | null;
 };
 
-const StatusBar = ({ scaleRatio, viewScale, placedCount, residentTotal, message }: Props) => {
+const StatusBar = ({
+  scaleRatio,
+  viewScale,
+  placedCount,
+  floorResidentTotal,
+  mapResidentTotal,
+  message,
+}: Props) => {
   return (
     <Group
       gap="lg"
@@ -35,7 +43,10 @@ const StatusBar = ({ scaleRatio, viewScale, placedCount, residentTotal, message 
           配置数: {placedCount}
         </Text>
         <Text size="xs" fw={600}>
-          居住者数（全体）: {residentTotal} 人
+          居住者数（階層）: {floorResidentTotal} 人
+        </Text>
+        <Text size="xs" fw={600}>
+          居住者数（全体）: {mapResidentTotal} 人
         </Text>
       </Group>
     </Group>

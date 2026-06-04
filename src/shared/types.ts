@@ -124,23 +124,36 @@ export type ZoneList = {
 };
 
 /**
- * レイアウトファイル (.layout.json) のスキーマ。
- *
- * 2026-06: 居住者の性質定義 (residentTypes) を追加。複数階層対応 (version 2) は
- * 後続フェーズで導入予定（設計書 §8.1.5）。当面は version 1 のまま residentTypes を任意フィールドとして扱う。
+ * 施設の階層（フロア）。設計書 §8.1.5。
+ * 各階層が独立した背景画像・縮尺・配置物を持つ。
  */
-export type LayoutFile = {
-  version: 1;
-  scaleRatio: number; // px per meter
+export type Floor = {
+  id: string;
+  name: string; // 例: "1F"
+  scaleRatio: number; // px per meter（階層ごと）
   background?: {
     dataUrl: string;
     width: number; // 画像の元ピクセル幅
     height: number;
   };
-  zoneList: ZoneList;
   placed: PlacedItem[];
-  /** 居住者の種類定義。未定義の旧ファイルはデフォルト 5 種類で補完。 */
-  residentTypes?: ResidentType[];
+};
+
+/**
+ * レイアウトファイル (.layout.json) のスキーマ（version 2 / 複数階層対応）。
+ *
+ * 設計書 §8.1.5。version 1（単一階層）の旧ファイルは読込時に単一 Floor へ変換する。
+ */
+export type LayoutFile = {
+  version: 2;
+  /** 参照する区画リスト名（共有リスト保存時に追従して更新）。 */
+  zoneListName: string;
+  /** 居住者の種類定義。 */
+  residentTypes: ResidentType[];
+  /** 区画リスト本体（自己完結のため丸ごと内包）。 */
+  zoneList: ZoneList;
+  /** 階層。最低 1 つ。 */
+  floors: Floor[];
 };
 
 /**

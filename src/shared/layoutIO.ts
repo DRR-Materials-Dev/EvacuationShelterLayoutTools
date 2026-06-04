@@ -1,4 +1,5 @@
 import type {
+  Floor,
   LayoutFile,
   PlacedItem,
   PlacedZone,
@@ -6,10 +7,10 @@ import type {
   ResidentType,
   TextBlock,
 } from './types.ts';
-import { DEFAULT_POLYGON_STYLE } from './constants.ts';
+import { DEFAULT_POLYGON_STYLE, DEFAULT_RESIDENT_TYPES } from './constants.ts';
 import { parseZoneList, ZoneListParseError } from './zoneListIO.ts';
 
-export const LAYOUT_VERSION = 1;
+export const LAYOUT_VERSION = 2;
 export const LAYOUT_EXTENSION = '.layout.json';
 
 export class LayoutParseError extends Error {
@@ -141,6 +142,49 @@ const parsePlacedItem = (raw: unknown, index: number): PlacedItem => {
   throw new LayoutParseError(`placed[${index}].kind が不明です: ${String(raw.kind)}`);
 };
 
+const parseBackground = (raw: unknown): Floor['background'] => {
+  if (raw === undefined || raw === null) return undefined;
+  if (!isObject(raw)) {
+    throw new LayoutParseError('background が不正です');
+  }
+  if (typeof raw.dataUrl !== 'string' || typeof raw.width !== 'number' || typeof raw.height !== 'number') {
+    throw new LayoutParseError('background の中身が不正です');
+  }
+  return { dataUrl: raw.dataUrl, width: raw.width, height: raw.height };
+};
+
+const parseFloor = (raw: unknown, index: number): Floor => {
+  if (!isObject(raw)) {
+    throw new LayoutParseError(`floors[${index}] がオブジェクトではありません`);
+  }
+  if (typeof raw.scaleRatio !== 'number' || raw.scaleRatio <= 0) {
+    throw new LayoutParseError(`floors[${index}].scaleRatio が不正です`);
+  }
+  if (!Array.isArray(raw.placed)) {
+    throw new LayoutParseError(`floors[${index}].placed が配列ではありません`);
+  }
+  const floor: Floor = {
+    id: typeof raw.id === 'string' ? raw.id : `floor-${Date.now()}-${index}`,
+    name: typeof raw.name === 'string' ? raw.name : `${index + 1}F`,
+    scaleRatio: raw.scaleRatio,
+    placed: raw.placed.map(parsePlacedItem),
+  };
+  const bg = parseBackground(raw.background);
+  if (bg) floor.background = bg;
+  return floor;
+};
+
+const parseZoneListField = (raw: unknown) => {
+  try {
+    return parseZoneList(JSON.stringify(raw));
+  } catch (e) {
+    if (e instanceof ZoneListParseError) {
+      throw new LayoutParseError(`zoneList が不正です: ${e.message}`);
+    }
+    throw e;
+  }
+};
+
 export const parseLayout = (json: string): LayoutFile => {
   let data: unknown;
   try {
@@ -154,57 +198,51 @@ export const parseLayout = (json: string): LayoutFile => {
   if (!isObject(data)) {
     throw new LayoutParseError('レイアウトファイルの形式が不正です（ルートがオブジェクトではありません）');
   }
-  if (data.version !== LAYOUT_VERSION) {
-    throw new LayoutParseError(
-      `未対応のバージョン: ${String(data.version)}（このツールが対応するバージョン: ${LAYOUT_VERSION}）`,
-    );
-  }
-  if (typeof data.scaleRatio !== 'number' || data.scaleRatio <= 0) {
-    throw new LayoutParseError('レイアウトファイルの scaleRatio が不正です');
-  }
 
-  let background: LayoutFile['background'];
-  if (data.background !== undefined && data.background !== null) {
-    if (!isObject(data.background)) {
-      throw new LayoutParseError('レイアウトファイルの background が不正です');
+  const zoneList = parseZoneListField(data.zoneList);
+  const residentTypes = parseResidentTypes(data.residentTypes) ?? DEFAULT_RESIDENT_TYPES;
+
+  // version 1（単一階層）→ version 2（複数階層）へ変換
+  if (data.version === 1) {
+    if (typeof data.scaleRatio !== 'number' || data.scaleRatio <= 0) {
+      throw new LayoutParseError('レイアウトファイルの scaleRatio が不正です');
     }
-    const bg = data.background;
-    if (
-      typeof bg.dataUrl !== 'string' ||
-      typeof bg.width !== 'number' ||
-      typeof bg.height !== 'number'
-    ) {
-      throw new LayoutParseError('レイアウトファイルの background の中身が不正です');
+    if (!Array.isArray(data.placed)) {
+      throw new LayoutParseError('レイアウトファイルの placed が配列ではありません');
     }
-    background = { dataUrl: bg.dataUrl, width: bg.width, height: bg.height };
+    const floor: Floor = {
+      id: `floor-${Date.now()}-0`,
+      name: '1F',
+      scaleRatio: data.scaleRatio,
+      placed: data.placed.map(parsePlacedItem),
+    };
+    const bg = parseBackground(data.background);
+    if (bg) floor.background = bg;
+    return {
+      version: LAYOUT_VERSION,
+      zoneListName: zoneList.name,
+      residentTypes,
+      zoneList,
+      floors: [floor],
+    };
   }
 
-  // zoneList は文字列化して zoneListIO に委譲する
-  let zoneList;
-  try {
-    zoneList = parseZoneList(JSON.stringify(data.zoneList));
-  } catch (e) {
-    if (e instanceof ZoneListParseError) {
-      throw new LayoutParseError(`zoneList が不正です: ${e.message}`);
+  if (data.version === LAYOUT_VERSION) {
+    if (!Array.isArray(data.floors) || data.floors.length === 0) {
+      throw new LayoutParseError('レイアウトファイルの floors が不正です（1 つ以上必要）');
     }
-    throw e;
+    return {
+      version: LAYOUT_VERSION,
+      zoneListName: typeof data.zoneListName === 'string' ? data.zoneListName : zoneList.name,
+      residentTypes,
+      zoneList,
+      floors: data.floors.map(parseFloor),
+    };
   }
 
-  if (!Array.isArray(data.placed)) {
-    throw new LayoutParseError('レイアウトファイルの placed が配列ではありません');
-  }
-  const placed = data.placed.map(parsePlacedItem);
-
-  const layout: LayoutFile = {
-    version: LAYOUT_VERSION,
-    scaleRatio: data.scaleRatio,
-    background,
-    zoneList,
-    placed,
-  };
-  const residentTypes = parseResidentTypes(data.residentTypes);
-  if (residentTypes) layout.residentTypes = residentTypes;
-  return layout;
+  throw new LayoutParseError(
+    `未対応のバージョン: ${String(data.version)}（このツールが対応するバージョン: ${LAYOUT_VERSION}）`,
+  );
 };
 
 export const serializeLayout = (layout: LayoutFile): string => JSON.stringify(layout, null, 2);
