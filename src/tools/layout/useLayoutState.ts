@@ -48,6 +48,8 @@ export type LayoutState = {
   /* ---- レイアウト全体の値 ---- */
   zoneList: ZoneList;
   zoneListName: string;
+  /** 区画リストを編集したが共有リストへ保存していない場合 true（離脱警告に使用）。 */
+  zoneListDirty: boolean;
   residentTypes: ResidentType[];
   /* ---- ビュー / UI 状態 ---- */
   viewScale: number;
@@ -93,8 +95,12 @@ export type LayoutActions = {
   replaceZoneList: (list: ZoneList) => void;
   /** 区画リストをデフォルトに戻す（全階層の配置済みもクリア、共有 IndexedDB もクリア） */
   resetZoneListToDefault: () => void;
-  /** 共有区画リストを保存し、レイアウトの参照リスト名も追従させる（設計書 §8.2）。 */
-  saveZoneListAs: (name: string) => void;
+  /** モーダル区画エディタの編集をレイアウトへ適用（パレット反映）。共有には未保存（dirty）にする。設計書 §8.2。 */
+  applyZoneListEdits: (list: ZoneList) => void;
+  /** モーダル区画エディタの編集をレイアウトへ適用し、共有区画リストへ保存（dirty 解除）。 */
+  saveSharedZoneList: (list: ZoneList) => void;
+  /** 現在の区画リストを共有 IndexedDB へ保存し dirty を解除（離脱警告の「保存」用）。 */
+  markZoneListSaved: () => void;
   loadLayout: (layout: LayoutFile) => void;
   buildLayoutFile: () => LayoutFile;
 };
@@ -104,6 +110,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
   const [activeFloorId, setActiveFloorId] = useState<string>(() => floors[0].id);
   const [zoneList, setZoneListState] = useState<ZoneList>(DEFAULT_ZONE_LIST);
   const [zoneListName, setZoneListName] = useState<string>(DEFAULT_ZONE_LIST.name);
+  const [zoneListDirty, setZoneListDirty] = useState<boolean>(false);
   const [residentTypes, setResidentTypesState] = useState<ResidentType[]>(DEFAULT_RESIDENT_TYPES);
 
   const [viewScale, setViewScale] = useState<number>(1);
@@ -357,6 +364,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
   const replaceZoneList = useCallback((list: ZoneList) => {
     setZoneListState(list);
     setZoneListName(list.name);
+    setZoneListDirty(false);
     void setStoredZoneList(list);
     // 区画タイプが変わるため全階層の配置物をクリア
     setFloors((prev) => prev.map((f) => ({ ...f, placed: [] })));
@@ -366,26 +374,37 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
   const resetZoneListToDefault = useCallback(() => {
     setZoneListState(DEFAULT_ZONE_LIST);
     setZoneListName(DEFAULT_ZONE_LIST.name);
+    setZoneListDirty(false);
     void clearStoredZoneList();
     setFloors((prev) => prev.map((f) => ({ ...f, placed: [] })));
     setSelectedId(null);
   }, []);
 
-  const saveZoneListAs = useCallback(
-    (name: string) => {
-      const named: ZoneList = { ...zoneList, name };
-      setZoneListState(named);
-      setZoneListName(name);
-      void setStoredZoneList(named);
-    },
-    [zoneList],
-  );
+  // モーダル区画エディタの編集を適用（パレット反映）。配置物はクリアしない。
+  const applyZoneListEdits = useCallback((list: ZoneList) => {
+    setZoneListState(list);
+    setZoneListName(list.name);
+    setZoneListDirty(true);
+  }, []);
+
+  const saveSharedZoneList = useCallback((list: ZoneList) => {
+    setZoneListState(list);
+    setZoneListName(list.name);
+    void setStoredZoneList(list);
+    setZoneListDirty(false);
+  }, []);
+
+  const markZoneListSaved = useCallback(() => {
+    void setStoredZoneList(zoneList);
+    setZoneListDirty(false);
+  }, [zoneList]);
 
   /* ---------- レイアウト読み書き ---------- */
 
   const loadLayout = useCallback((layout: LayoutFile) => {
     setZoneListState(layout.zoneList);
     setZoneListName(layout.zoneListName);
+    setZoneListDirty(false);
     void setStoredZoneList(layout.zoneList);
     setResidentTypesState(layout.residentTypes);
     const loadedFloors = layout.floors.length > 0 ? layout.floors : [createDefaultFloor()];
@@ -417,6 +436,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     placed,
     zoneList,
     zoneListName,
+    zoneListDirty,
     residentTypes,
     viewScale,
     stagePos,
@@ -452,7 +472,9 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     clearAll,
     replaceZoneList,
     resetZoneListToDefault,
-    saveZoneListAs,
+    applyZoneListEdits,
+    saveSharedZoneList,
+    markZoneListSaved,
     loadLayout,
     buildLayoutFile,
   };
