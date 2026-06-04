@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
-import { Modal, Button, Group, Text, Stack } from '@mantine/core';
+import { Modal, Button, Group, Text, Stack, TextInput } from '@mantine/core';
 import Konva from 'konva';
 import AppHeader from '../shared/components/AppHeader.tsx';
 import Canvas from '../tools/layout/Canvas.tsx';
@@ -20,7 +20,12 @@ import { useLayoutState } from '../tools/layout/useLayoutState.ts';
 import { getZoneResidentTotal, sumResidentsByType } from '../shared/types.ts';
 import type { PlacedZone } from '../shared/types.ts';
 import { residentsInPolygon } from '../shared/geometry.ts';
-import { downloadLayout, readLayoutFile, LayoutParseError } from '../shared/layoutIO.ts';
+import {
+  downloadLayout,
+  readLayoutFile,
+  LayoutParseError,
+  LAYOUT_EXTENSION,
+} from '../shared/layoutIO.ts';
 import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
 
 const LayoutPage = () => {
@@ -40,6 +45,10 @@ const LayoutPage = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [residentTypesOpen, setResidentTypesOpen] = useState(false);
   const [zoneEditorOpen, setZoneEditorOpen] = useState(false);
+  const [saveLayoutModal, setSaveLayoutModal] = useState<{ opened: boolean; name: string }>({
+    opened: false,
+    name: '',
+  });
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   /* ---------- 区画リスト未保存時のナビゲーションガード（設計書 §8.2） ---------- */
@@ -283,12 +292,19 @@ const LayoutPage = () => {
     setStatusMessage('区画リストをデフォルトに戻しました（配置済みの区画もクリアしました）');
   }, [actions]);
 
-  /* ---------- レイアウト保存 ---------- */
-  const handleSaveLayout = useCallback(() => {
+  /* ---------- レイアウト保存（ファイル名入力） ---------- */
+  const handleOpenSaveLayout = useCallback(() => {
+    setSaveLayoutModal({ opened: true, name: '避難所レイアウト' });
+  }, []);
+
+  const handleConfirmSaveLayout = useCallback(() => {
     const layout = actions.buildLayoutFile();
-    downloadLayout(layout);
-    setStatusMessage('レイアウトファイルをダウンロードしました');
-  }, [actions]);
+    const base = saveLayoutModal.name.trim() || '避難所レイアウト';
+    const filename = base.endsWith(LAYOUT_EXTENSION) ? base : `${base}${LAYOUT_EXTENSION}`;
+    downloadLayout(layout, filename);
+    setSaveLayoutModal({ opened: false, name: '' });
+    setStatusMessage(`レイアウトファイル「${filename}」をダウンロードしました`);
+  }, [actions, saveLayoutModal.name]);
 
   /* ---------- レイアウト読み込み ---------- */
   const handleLoadLayoutFile = useCallback(
@@ -338,7 +354,7 @@ const LayoutPage = () => {
         onOpenResidentTypes={() => setResidentTypesOpen(true)}
         onRemoveSelected={handleRemoveSelected}
         onClearAll={() => setClearAllConfirm(true)}
-        onSaveLayout={handleSaveLayout}
+        onSaveLayout={handleOpenSaveLayout}
         onLoadLayoutFile={(f) => void handleLoadLayoutFile(f)}
         onOpenSettings={() => setSettingsOpen(true)}
         onDownloadPng={handleDownloadPng}
@@ -450,6 +466,46 @@ const LayoutPage = () => {
           }}
         />
       )}
+
+      {/* レイアウト保存: ファイル名入力 */}
+      <Modal
+        opened={saveLayoutModal.opened}
+        onClose={() => setSaveLayoutModal({ opened: false, name: '' })}
+        title="レイアウトを保存"
+        centered
+      >
+        <Stack>
+          <TextInput
+            label="ファイル名"
+            value={saveLayoutModal.name}
+            onChange={(e) =>
+              setSaveLayoutModal((prev) => ({ ...prev, name: e.currentTarget.value }))
+            }
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleConfirmSaveLayout();
+            }}
+            rightSection={
+              <Text size="xs" c="dimmed" pr={8} style={{ whiteSpace: 'nowrap' }}>
+                {LAYOUT_EXTENSION}
+              </Text>
+            }
+            rightSectionWidth={96}
+            data-autofocus
+          />
+          <Text size="xs" c="dimmed">
+            拡張子 {LAYOUT_EXTENSION} は自動で付与されます。
+          </Text>
+          <Group justify="flex-end" mt="md">
+            <Button
+              variant="default"
+              onClick={() => setSaveLayoutModal({ opened: false, name: '' })}
+            >
+              キャンセル
+            </Button>
+            <Button onClick={handleConfirmSaveLayout}>保存</Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* 区画リスト未保存のナビゲーション警告 */}
       <Modal
