@@ -2,8 +2,10 @@ import { useRef } from 'react';
 import { Button, Group, Tooltip } from '@mantine/core';
 
 // メニュー画面のツールアイコン色に合わせたボタン背景色
-const ZONE_LIST_BTN_BG = '#D0EBFF'; // 避難所レイアウトのアイコン色（blue.1）
 const LAYOUT_BTN_BG = '#C3FAE8'; // 区画エディタのアイコン色（teal.1）
+
+// ツールバーが狭くなってもラベルが潰れないよう、各ボタンは縮小しない
+const NO_SHRINK = { flexShrink: 0 } as const;
 import {
   IconPhoto,
   IconRuler,
@@ -14,9 +16,6 @@ import {
   IconTrashX,
   IconDeviceFloppy,
   IconUpload,
-  IconList,
-  IconRestore,
-  IconPencil,
   IconSettings,
   IconPhotoDown,
   IconUsers,
@@ -39,13 +38,10 @@ type Props = {
   onAddPolygon: () => void;
   onToggleShowZones: () => void;
   onOpenResidentTypes: () => void;
-  onOpenZoneEditor: () => void;
   onRemoveSelected: () => void;
   onClearAll: () => void;
   onSaveLayout: () => void;
   onLoadLayoutFile: (file: File) => void;
-  onLoadZoneListFile: (file: File) => void;
-  onResetZoneList: () => void;
   onOpenSettings: () => void;
   onDownloadPng: () => void;
 };
@@ -64,19 +60,15 @@ const Toolbar = ({
   onAddPolygon,
   onToggleShowZones,
   onOpenResidentTypes,
-  onOpenZoneEditor,
   onRemoveSelected,
   onClearAll,
   onSaveLayout,
   onLoadLayoutFile,
-  onLoadZoneListFile,
-  onResetZoneList,
   onOpenSettings,
   onDownloadPng,
 }: Props) => {
   const bgInputRef = useRef<HTMLInputElement>(null);
   const layoutInputRef = useRef<HTMLInputElement>(null);
-  const listInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <Group
@@ -95,6 +87,7 @@ const Toolbar = ({
           variant="default"
           leftSection={<IconPhoto size={16} />}
           onClick={() => bgInputRef.current?.click()}
+          style={NO_SHRINK}
         >
           施設画像
         </Button>
@@ -117,19 +110,20 @@ const Toolbar = ({
           color={isScaleMode ? 'blue' : undefined}
           leftSection={<IconRuler size={16} />}
           onClick={onToggleScaleMode}
+          style={NO_SHRINK}
         >
           {isScaleMode ? '縮尺設定中…' : '縮尺設定'}
         </Button>
       </Tooltip>
 
-      <Group gap={4} wrap="nowrap">
+      <Group gap={4} wrap="nowrap" style={NO_SHRINK}>
         <Tooltip label="拡大">
-          <Button variant="default" px={8} onClick={onZoomIn}>
+          <Button variant="default" px={8} onClick={onZoomIn} style={NO_SHRINK}>
             <IconZoomIn size={16} />
           </Button>
         </Tooltip>
         <Tooltip label="縮小">
-          <Button variant="default" px={8} onClick={onZoomOut}>
+          <Button variant="default" px={8} onClick={onZoomOut} style={NO_SHRINK}>
             <IconZoomOut size={16} />
           </Button>
         </Tooltip>
@@ -141,6 +135,7 @@ const Toolbar = ({
           color={isAddingText ? 'blue' : undefined}
           leftSection={<IconTextSize size={16} />}
           onClick={onAddText}
+          style={NO_SHRINK}
         >
           {isAddingText ? 'テキスト配置中…' : 'テキスト'}
         </Button>
@@ -158,6 +153,7 @@ const Toolbar = ({
           color={isAddingPolygon ? 'blue' : undefined}
           leftSection={<IconPolygon size={16} />}
           onClick={onAddPolygon}
+          style={NO_SHRINK}
         >
           {isAddingPolygon ? 'ゾーン作図中…' : 'ゾーン'}
         </Button>
@@ -168,6 +164,7 @@ const Toolbar = ({
           variant="default"
           leftSection={showZones ? <IconEye size={16} /> : <IconEyeOff size={16} />}
           onClick={onToggleShowZones}
+          style={NO_SHRINK}
         >
           {showZones ? 'ゾーン表示' : 'ゾーン非表示'}
         </Button>
@@ -178,6 +175,7 @@ const Toolbar = ({
           variant="default"
           leftSection={<IconUsers size={16} />}
           onClick={onOpenResidentTypes}
+          style={NO_SHRINK}
         >
           居住者種類
         </Button>
@@ -189,68 +187,31 @@ const Toolbar = ({
           leftSection={<IconTrash size={16} />}
           onClick={onRemoveSelected}
           disabled={!hasSelection}
+          style={NO_SHRINK}
         >
           選択削除
         </Button>
       </Tooltip>
 
       <Tooltip label="全て削除（背景画像も含む）">
-        <Button variant="default" color="red" leftSection={<IconTrashX size={16} />} onClick={onClearAll}>
+        <Button
+          variant="default"
+          color="red"
+          leftSection={<IconTrashX size={16} />}
+          onClick={onClearAll}
+          style={NO_SHRINK}
+        >
           全削除
         </Button>
       </Tooltip>
 
-      <Group gap={4} ml="auto" wrap="nowrap">
-        <Tooltip label="区画の追加・編集（区画エディタを開く）">
-          <Button
-            variant="default"
-            leftSection={<IconPencil size={16} />}
-            onClick={onOpenZoneEditor}
-            style={{ backgroundColor: ZONE_LIST_BTN_BG }}
-          >
-            区画追加・編集
-          </Button>
-        </Tooltip>
-
-        <Tooltip label="区画リスト (.list.json) を読み込む">
-          <Button
-            variant="default"
-            leftSection={<IconList size={16} />}
-            onClick={() => listInputRef.current?.click()}
-            style={{ backgroundColor: ZONE_LIST_BTN_BG }}
-          >
-            区画リスト読込
-          </Button>
-        </Tooltip>
-
-        <Tooltip label="区画リストを既定 (デフォルト) に戻す">
-          <Button
-            variant="default"
-            leftSection={<IconRestore size={16} />}
-            onClick={onResetZoneList}
-            style={{ backgroundColor: ZONE_LIST_BTN_BG }}
-          >
-            区画リスト初期化
-          </Button>
-        </Tooltip>
-        <input
-          ref={listInputRef}
-          type="file"
-          accept=".list.json"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onLoadZoneListFile(file);
-            e.target.value = '';
-          }}
-        />
-
+      <Group gap={4} ml="auto" wrap="nowrap" style={NO_SHRINK}>
         <Tooltip label="レイアウト (.layout.json) を読み込む">
           <Button
             variant="default"
             leftSection={<IconUpload size={16} />}
             onClick={() => layoutInputRef.current?.click()}
-            style={{ backgroundColor: LAYOUT_BTN_BG }}
+            style={{ ...NO_SHRINK, backgroundColor: LAYOUT_BTN_BG }}
           >
             レイアウト読込
           </Button>
@@ -272,20 +233,20 @@ const Toolbar = ({
             variant="default"
             leftSection={<IconDeviceFloppy size={16} />}
             onClick={onSaveLayout}
-            style={{ backgroundColor: LAYOUT_BTN_BG }}
+            style={{ ...NO_SHRINK, backgroundColor: LAYOUT_BTN_BG }}
           >
             レイアウト保存
           </Button>
         </Tooltip>
 
         <Tooltip label="現在の表示を PNG として保存">
-          <Button color="blue" leftSection={<IconPhotoDown size={16} />} onClick={onDownloadPng}>
+          <Button color="blue" leftSection={<IconPhotoDown size={16} />} onClick={onDownloadPng} style={NO_SHRINK}>
             画像保存
           </Button>
         </Tooltip>
 
         <Tooltip label="ユーザー設定（スナップ等）">
-          <Button variant="default" leftSection={<IconSettings size={16} />} onClick={onOpenSettings}>
+          <Button variant="default" leftSection={<IconSettings size={16} />} onClick={onOpenSettings} style={NO_SHRINK}>
             設定
           </Button>
         </Tooltip>
