@@ -17,7 +17,7 @@ import FloorTabs from '../tools/layout/FloorTabs.tsx';
 import ZoneEditorModal from '../tools/layout/ZoneEditorModal.tsx';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
 import { useLayoutState } from '../tools/layout/useLayoutState.ts';
-import { getZoneResidentTotal } from '../shared/types.ts';
+import { getZoneResidentTotal, sumResidentsByType } from '../shared/types.ts';
 import type { PlacedZone } from '../shared/types.ts';
 import { residentsInPolygon } from '../shared/geometry.ts';
 import { downloadLayout, readLayoutFile, LayoutParseError } from '../shared/layoutIO.ts';
@@ -73,6 +73,13 @@ const LayoutPage = () => {
     (sum, f) =>
       sum + f.placed.reduce((s, p) => (p.kind === 'zone' ? s + getZoneResidentTotal(p) : s), 0),
     0,
+  );
+  // 種類別内訳（ステータスバーのホバー表示用）
+  const floorByType = sumResidentsByType(
+    state.placed.filter((p): p is PlacedZone => p.kind === 'zone'),
+  );
+  const mapByType = sumResidentsByType(
+    state.floors.flatMap((f) => f.placed.filter((p): p is PlacedZone => p.kind === 'zone')),
   );
 
   /* ---------- 選択中のゾーン（多角形）とゾーン内カウント ---------- */
@@ -386,6 +393,9 @@ const LayoutPage = () => {
         placedCount={state.placed.length}
         floorResidentTotal={floorResidentTotal}
         mapResidentTotal={mapResidentTotal}
+        residentTypes={state.residentTypes}
+        floorByType={floorByType}
+        mapByType={mapByType}
         message={statusMessage}
       />
 
