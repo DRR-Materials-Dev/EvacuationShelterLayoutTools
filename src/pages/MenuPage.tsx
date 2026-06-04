@@ -38,7 +38,7 @@ const tools: Tool[] = [
   },
 ];
 
-const APP_VERSION = '2.0.1';
+const APP_VERSION = __APP_VERSION__;
 
 const MenuPage = () => {
   const navigate = useNavigate();
