@@ -22,6 +22,7 @@ import {
   IconPolygon,
   IconEye,
   IconEyeOff,
+  IconStar,
 } from '@tabler/icons-react';
 
 type Props = {
@@ -42,6 +43,7 @@ type Props = {
   onClearAll: () => void;
   onSaveLayout: () => void;
   onLoadLayoutFile: (file: File) => void;
+  onLoadSample: () => void;
   onOpenSettings: () => void;
   onDownloadPng: () => void;
 };
@@ -64,6 +66,7 @@ const Toolbar = ({
   onClearAll,
   onSaveLayout,
   onLoadLayoutFile,
+  onLoadSample,
   onOpenSettings,
   onDownloadPng,
 }: Props) => {
@@ -206,6 +209,17 @@ const Toolbar = ({
       </Tooltip>
 
       <Group gap={4} ml="auto" wrap="nowrap" style={NO_SHRINK}>
+        <Tooltip label="サンプルのレイアウトを読み込む（ファイル選択不要）">
+          <Button
+            variant="default"
+            leftSection={<IconStar size={16} />}
+            onClick={onLoadSample}
+            style={NO_SHRINK}
+          >
+            サンプル読込
+          </Button>
+        </Tooltip>
+
         <Tooltip label="レイアウト (.layout.json) を読み込む">
           <Button
             variant="default"

@@ -23,9 +23,13 @@ import { residentsInPolygon } from '../shared/geometry.ts';
 import {
   downloadLayout,
   readLayoutFile,
+  parseLayout,
   LayoutParseError,
   LAYOUT_EXTENSION,
 } from '../shared/layoutIO.ts';
+
+/** public/ に同梱したサンプルレイアウトのファイル名（GitHub Pages で配信される） */
+const SAMPLE_LAYOUT_FILENAME = '避難所レイアウトサンプル.layout.json';
 import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
 
 const LayoutPage = () => {
@@ -321,6 +325,22 @@ const LayoutPage = () => {
     [actions],
   );
 
+  /* ---------- サンプルレイアウト読み込み（ファイル選択不要） ---------- */
+  const handleLoadSample = useCallback(async () => {
+    try {
+      const url = `${import.meta.env.BASE_URL}${encodeURIComponent(SAMPLE_LAYOUT_FILENAME)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const layout = parseLayout(text);
+      actions.loadLayout(layout);
+      setStatusMessage('サンプルレイアウトを読み込みました');
+    } catch (e) {
+      const msg = e instanceof LayoutParseError ? e.message : 'サンプルの読み込みに失敗しました';
+      setStatusMessage(msg);
+    }
+  }, [actions]);
+
   /* ---------- PNG ダウンロード ---------- */
   const handleDownloadPng = useCallback(() => {
     const stage = stageRef.current;
@@ -356,6 +376,7 @@ const LayoutPage = () => {
         onClearAll={() => setClearAllConfirm(true)}
         onSaveLayout={handleOpenSaveLayout}
         onLoadLayoutFile={(f) => void handleLoadLayoutFile(f)}
+        onLoadSample={() => void handleLoadSample()}
         onOpenSettings={() => setSettingsOpen(true)}
         onDownloadPng={handleDownloadPng}
       />
