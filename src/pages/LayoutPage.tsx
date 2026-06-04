@@ -9,8 +9,11 @@ import StatusBar from '../tools/layout/StatusBar.tsx';
 import ScaleCalibrationModal from '../tools/layout/ScaleCalibrationModal.tsx';
 import AddTextModal from '../tools/layout/AddTextModal.tsx';
 import EditTextModal from '../tools/layout/EditTextModal.tsx';
+import ResidentTypesModal from '../tools/layout/ResidentTypesModal.tsx';
+import SelectionPanel from '../tools/layout/SelectionPanel.tsx';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
 import { useLayoutState } from '../tools/layout/useLayoutState.ts';
+import { getZoneResidentTotal } from '../shared/types.ts';
 import { downloadLayout, readLayoutFile, LayoutParseError } from '../shared/layoutIO.ts';
 import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
 
@@ -29,7 +32,24 @@ const LayoutPage = () => {
   const [textPlacePosition, setTextPlacePosition] = useState<{ x: number; y: number } | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [residentTypesOpen, setResidentTypesOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  /* ---------- 選択中の区画（居住者人数パネル用） ---------- */
+  const selectedZone =
+    state.selectedId !== null
+      ? state.placed.find((p) => p.id === state.selectedId && p.kind === 'zone')
+      : undefined;
+  const selectedZoneTypeName =
+    selectedZone && selectedZone.kind === 'zone'
+      ? (state.zoneList.zones.find((z) => z.id === selectedZone.typeId)?.name ?? '(不明な区画)')
+      : '';
+
+  /* ---------- マップ全体の居住者数 ---------- */
+  const mapResidentTotal = state.placed.reduce(
+    (sum, p) => (p.kind === 'zone' ? sum + getZoneResidentTotal(p) : sum),
+    0,
+  );
 
   /* ---------- 背景画像の読み込み ---------- */
   const handleLoadBackground = useCallback(
@@ -242,6 +262,7 @@ const LayoutPage = () => {
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onAddText={handleToggleAddText}
+        onOpenResidentTypes={() => setResidentTypesOpen(true)}
         onRemoveSelected={handleRemoveSelected}
         onClearAll={() => setClearAllConfirm(true)}
         onSaveLayout={handleSaveLayout}
@@ -261,11 +282,22 @@ const LayoutPage = () => {
           onTextEditRequested={setEditingTextId}
           stageRef={stageRef}
         />
+        {selectedZone && selectedZone.kind === 'zone' && (
+          <SelectionPanel
+            key={selectedZone.id}
+            zone={selectedZone}
+            zoneTypeName={selectedZoneTypeName}
+            residentTypes={state.residentTypes}
+            onChange={(residents) => actions.setZoneResidents(selectedZone.id, residents)}
+            onClose={() => actions.setSelectedId(null)}
+          />
+        )}
       </div>
       <StatusBar
         scaleRatio={state.scaleRatio}
         viewScale={state.viewScale}
         placedCount={state.placed.length}
+        residentTotal={mapResidentTotal}
         message={statusMessage}
       />
 
@@ -290,6 +322,16 @@ const LayoutPage = () => {
       {/* ユーザー設定モーダル（開くたびに最新値で再マウント） */}
       {settingsOpen && (
         <UserSettingsModal opened onClose={() => setSettingsOpen(false)} />
+      )}
+
+      {/* 居住者種類の設定モーダル（開くたびに最新値で再マウント） */}
+      {residentTypesOpen && (
+        <ResidentTypesModal
+          opened
+          residentTypes={state.residentTypes}
+          onClose={() => setResidentTypesOpen(false)}
+          onSave={actions.setResidentTypes}
+        />
       )}
 
       {/* テキスト編集モーダル (既存テキストのダブルクリック) */}

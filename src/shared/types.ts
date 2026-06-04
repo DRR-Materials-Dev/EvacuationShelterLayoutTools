@@ -54,6 +54,17 @@ export type ZoneType = {
  * 避難所レイアウトに配置された個別インスタンス（区画）。
  * 座標・寸法はすべてメートル単位で保持し、表示時に scaleRatio を掛けて px に変換する。
  */
+/**
+ * 区画を利用する居住者の性質（種類）。
+ * デフォルト 5 種類に加え、ユーザーが最大 MAX_ADDITIONAL_RESIDENT_TYPES 件まで追加できる。
+ * デフォルト種類は削除不可（表示名・色は変更可）。設計書 §8.1.1 を参照。
+ */
+export type ResidentType = {
+  id: string;
+  name: string;
+  color: string; // #RRGGBB（凡例・カウント表示の色分け用）
+};
+
 export type PlacedZone = {
   kind: 'zone';
   id: string;
@@ -63,6 +74,8 @@ export type PlacedZone = {
   rotation: number; // 度
   width?: number; // 上書き時のみ（resizable=true の場合）
   height?: number;
+  /** 居住者の種類ID -> 人数。未定義・0 は「設定なし」。設計書 §8.1.2。 */
+  residents?: Record<string, number>;
 };
 
 export type TextBlock = {
@@ -91,6 +104,9 @@ export type ZoneList = {
 
 /**
  * レイアウトファイル (.layout.json) のスキーマ。
+ *
+ * 2026-06: 居住者の性質定義 (residentTypes) を追加。複数階層対応 (version 2) は
+ * 後続フェーズで導入予定（設計書 §8.1.5）。当面は version 1 のまま residentTypes を任意フィールドとして扱う。
  */
 export type LayoutFile = {
   version: 1;
@@ -102,6 +118,8 @@ export type LayoutFile = {
   };
   zoneList: ZoneList;
   placed: PlacedItem[];
+  /** 居住者の種類定義。未定義の旧ファイルはデフォルト 5 種類で補完。 */
+  residentTypes?: ResidentType[];
 };
 
 /**
@@ -146,3 +164,22 @@ export const getZoneNameAlignH = (z: ZoneType): 'left' | 'center' | 'right' =>
 /** 表示名の縦位置。未定義時は 'middle'。 */
 export const getZoneNameAlignV = (z: ZoneType): 'top' | 'middle' | 'bottom' =>
   z.nameAlignV ?? 'middle';
+
+/** 配置済み区画に設定された居住者の合計人数。residents 未定義時は 0。 */
+export const getZoneResidentTotal = (z: PlacedZone): number =>
+  z.residents ? Object.values(z.residents).reduce((sum, n) => sum + (n > 0 ? n : 0), 0) : 0;
+
+/**
+ * 配置済み区画の、指定した居住者種類の合計を集計して返す。
+ * 戻り値は residentTypeId -> 合計人数（0 の種類は含めない）。
+ */
+export const sumResidentsByType = (zones: PlacedZone[]): Record<string, number> => {
+  const out: Record<string, number> = {};
+  for (const z of zones) {
+    if (!z.residents) continue;
+    for (const [typeId, n] of Object.entries(z.residents)) {
+      if (n > 0) out[typeId] = (out[typeId] ?? 0) + n;
+    }
+  }
+  return out;
+};
