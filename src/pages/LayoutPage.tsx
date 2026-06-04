@@ -11,9 +11,12 @@ import AddTextModal from '../tools/layout/AddTextModal.tsx';
 import EditTextModal from '../tools/layout/EditTextModal.tsx';
 import ResidentTypesModal from '../tools/layout/ResidentTypesModal.tsx';
 import SelectionPanel from '../tools/layout/SelectionPanel.tsx';
+import PolygonPanel from '../tools/layout/PolygonPanel.tsx';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
 import { useLayoutState } from '../tools/layout/useLayoutState.ts';
 import { getZoneResidentTotal } from '../shared/types.ts';
+import type { PlacedZone } from '../shared/types.ts';
+import { residentsInPolygon } from '../shared/geometry.ts';
 import { downloadLayout, readLayoutFile, LayoutParseError } from '../shared/layoutIO.ts';
 import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
 
@@ -51,6 +54,21 @@ const LayoutPage = () => {
     0,
   );
 
+  /* ---------- 選択中のゾーン（多角形）とゾーン内カウント ---------- */
+  const selectedPolygon =
+    state.selectedId !== null
+      ? state.placed.find((p) => p.id === state.selectedId && p.kind === 'polygon')
+      : undefined;
+  const placedZones = state.placed.filter((p): p is PlacedZone => p.kind === 'zone');
+  const zoneDims = (zone: PlacedZone) => {
+    const t = state.zoneList.zones.find((z) => z.id === zone.typeId);
+    return { width: zone.width ?? t?.width ?? 1, height: zone.height ?? t?.height ?? 1 };
+  };
+  const polygonCount =
+    selectedPolygon && selectedPolygon.kind === 'polygon'
+      ? residentsInPolygon(selectedPolygon, placedZones, zoneDims)
+      : { byType: {}, total: 0 };
+
   /* ---------- 背景画像の読み込み ---------- */
   const handleLoadBackground = useCallback(
     (file: File) => {
@@ -73,9 +91,12 @@ const LayoutPage = () => {
 
   /* ---------- 縮尺キャリブレーション ---------- */
   const handleToggleScaleMode = useCallback(() => {
+    // 排他: テキスト・ゾーン作図モードを解除
+    if (state.isAddingText) actions.setIsAddingText(false);
+    if (state.isAddingPolygon) actions.setIsAddingPolygon(false);
     actions.setScalePoints([]);
     actions.setIsScaleMode(!state.isScaleMode);
-  }, [actions, state.isScaleMode]);
+  }, [actions, state.isScaleMode, state.isAddingText, state.isAddingPolygon]);
 
   const handleScaleCalibrated = useCallback((distancePx: number) => {
     setScaleModal({ opened: true, distancePx });
@@ -109,14 +130,34 @@ const LayoutPage = () => {
 
   /* ---------- テキスト追加 ---------- */
   const handleToggleAddText = useCallback(() => {
-    // 排他: スケール設定中なら解除し、テキストモードに切替
+    // 排他: 他モードを解除し、テキストモードに切替
     if (state.isScaleMode) {
       actions.setScalePoints([]);
       actions.setIsScaleMode(false);
     }
+    if (state.isAddingPolygon) actions.setIsAddingPolygon(false);
     actions.setIsAddingText(!state.isAddingText);
     setStatusMessage(state.isAddingText ? null : '配置先をクリックしてください');
-  }, [actions, state.isAddingText, state.isScaleMode]);
+  }, [actions, state.isAddingText, state.isScaleMode, state.isAddingPolygon]);
+
+  /* ---------- ゾーン（多角形）作図 ---------- */
+  const handleToggleAddPolygon = useCallback(() => {
+    // 排他: 他モードを解除し、ゾーン作図モードに切替
+    if (state.isScaleMode) {
+      actions.setScalePoints([]);
+      actions.setIsScaleMode(false);
+    }
+    if (state.isAddingText) actions.setIsAddingText(false);
+    const next = !state.isAddingPolygon;
+    actions.setIsAddingPolygon(next);
+    setStatusMessage(
+      next ? 'クリックで頂点を追加し、ダブルクリックか始点クリックで確定します（Esc で取消）' : null,
+    );
+  }, [actions, state.isAddingPolygon, state.isScaleMode, state.isAddingText]);
+
+  const handleToggleShowZones = useCallback(() => {
+    actions.setShowZones(!state.showZones);
+  }, [actions, state.showZones]);
 
   const handleTextPlaceRequested = useCallback(
     (xMeters: number, yMeters: number) => {
@@ -256,12 +297,16 @@ const LayoutPage = () => {
       <Toolbar
         isScaleMode={state.isScaleMode}
         isAddingText={state.isAddingText}
+        isAddingPolygon={state.isAddingPolygon}
+        showZones={state.showZones}
         hasSelection={state.selectedId !== null}
         onLoadBackgroundImage={handleLoadBackground}
         onToggleScaleMode={handleToggleScaleMode}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onAddText={handleToggleAddText}
+        onAddPolygon={handleToggleAddPolygon}
+        onToggleShowZones={handleToggleShowZones}
         onOpenResidentTypes={() => setResidentTypesOpen(true)}
         onRemoveSelected={handleRemoveSelected}
         onClearAll={() => setClearAllConfirm(true)}
@@ -289,6 +334,17 @@ const LayoutPage = () => {
             zoneTypeName={selectedZoneTypeName}
             residentTypes={state.residentTypes}
             onChange={(residents) => actions.setZoneResidents(selectedZone.id, residents)}
+            onClose={() => actions.setSelectedId(null)}
+          />
+        )}
+        {selectedPolygon && selectedPolygon.kind === 'polygon' && (
+          <PolygonPanel
+            key={selectedPolygon.id}
+            polygon={selectedPolygon}
+            residentTypes={state.residentTypes}
+            byType={polygonCount.byType}
+            total={polygonCount.total}
+            onChange={(attrs) => actions.updatePlaced(selectedPolygon.id, attrs)}
             onClose={() => actions.setSelectedId(null)}
           />
         )}

@@ -14,7 +14,7 @@ import {
 import useImage from 'use-image';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { Box } from 'konva/lib/shapes/Transformer';
-import type { PlacedZone, TextBlock, ZoneType } from '../../shared/types.ts';
+import type { PlacedZone, PolygonZone, TextBlock, ZoneType } from '../../shared/types.ts';
 import {
   getZoneBorder,
   getZoneDisplayText,
@@ -23,6 +23,7 @@ import {
   getZoneNameColor,
   getZoneResidentTotal,
 } from '../../shared/types.ts';
+import { polygonCentroid, residentsInPolygon } from '../../shared/geometry.ts';
 import ZoneImageKonva from '../../shared/components/ZoneImageKonva.tsx';
 import { snapPoint, snapValue } from '../../shared/snap.ts';
 import { useUserSettings } from '../../shared/settings.tsx';
@@ -61,8 +62,47 @@ const Canvas = ({
   const { settings } = useUserSettings();
   const [size, setSize] = useState({ width: 800, height: 600 });
 
+  // ゾーン作図中の頂点（メートル座標）とカーソル位置（プレビュー線用）
+  const [polygonDraft, setPolygonDraft] = useState<Point[]>([]);
+  const [cursorMeters, setCursorMeters] = useState<Point | null>(null);
+
   // 配置済みアイテムを id でルックアップしやすくするマップ（タイプ定義用）
   const typeMap = new Map<string, ZoneType>(state.zoneList.zones.map((z) => [z.id, z]));
+
+  // 区画の寸法（メートル）をタイプ既定値を考慮して解決する
+  const zoneDims = useCallback(
+    (zone: PlacedZone) => {
+      const t = typeMap.get(zone.typeId);
+      return {
+        width: zone.width ?? t?.width ?? 1,
+        height: zone.height ?? t?.height ?? 1,
+      };
+    },
+    // typeMap は毎レンダー新規生成のため zoneList を依存に取る
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.zoneList],
+  );
+
+  // 居住者カウント対象の配置済み区画
+  const placedZones = state.placed.filter((p): p is PlacedZone => p.kind === 'zone');
+
+  // ゾーン作図を確定する
+  const finalizePolygon = useCallback(() => {
+    if (polygonDraft.length >= 3) {
+      actions.addPolygon(polygonDraft);
+    }
+    setPolygonDraft([]);
+    setCursorMeters(null);
+    actions.setIsAddingPolygon(false);
+  }, [polygonDraft, actions]);
+
+  // 作図モードが解除されたら下書きをクリア
+  useEffect(() => {
+    if (!state.isAddingPolygon) {
+      setPolygonDraft([]);
+      setCursorMeters(null);
+    }
+  }, [state.isAddingPolygon]);
 
   // 親コンテナのサイズを監視
   useEffect(() => {
@@ -93,6 +133,24 @@ const Canvas = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [state.selectedId, actions]);
+
+  // ゾーン作図中の Enter（確定）/ Escape（取消）
+  useEffect(() => {
+    if (!state.isAddingPolygon) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finalizePolygon();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setPolygonDraft([]);
+        setCursorMeters(null);
+        actions.setIsAddingPolygon(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state.isAddingPolygon, finalizePolygon, actions]);
 
   /* ---------- マウス/タッチ ---------- */
 
@@ -126,6 +184,25 @@ const Canvas = ({
         return;
       }
 
+      // ゾーン作図モード: クリックで頂点追加。始点付近クリックで確定（3 点以上）。
+      if (state.isAddingPolygon) {
+        const pos = stage.getRelativePointerPosition();
+        if (!pos) return;
+        const xMeters = pos.x / state.scaleRatio;
+        const yMeters = pos.y / state.scaleRatio;
+        if (polygonDraft.length >= 3) {
+          const start = polygonDraft[0];
+          const distPx =
+            Math.hypot(start.x - xMeters, start.y - yMeters) * state.scaleRatio * state.viewScale;
+          if (distPx < 12) {
+            finalizePolygon();
+            return;
+          }
+        }
+        setPolygonDraft((prev) => [...prev, { x: xMeters, y: yMeters }]);
+        return;
+      }
+
       // クリック先がステージ自体または背景レイヤーなら選択解除
       const target = e.target;
       const isEmpty = target === stage;
@@ -138,7 +215,11 @@ const Canvas = ({
       state.isScaleMode,
       state.scalePoints,
       state.isAddingText,
+      state.isAddingPolygon,
       state.scaleRatio,
+      state.viewScale,
+      polygonDraft,
+      finalizePolygon,
       settings,
       actions,
       onScaleCalibrated,
@@ -146,6 +227,16 @@ const Canvas = ({
       stageRef,
     ],
   );
+
+  // ゾーン作図中はカーソル位置を追跡してプレビュー線を描く
+  const handleStageMouseMove = useCallback(() => {
+    if (!state.isAddingPolygon) return;
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pos = stage.getRelativePointerPosition();
+    if (!pos) return;
+    setCursorMeters({ x: pos.x / state.scaleRatio, y: pos.y / state.scaleRatio });
+  }, [state.isAddingPolygon, state.scaleRatio, stageRef]);
 
   const handleWheel = useCallback(
     (e: KonvaEventObject<WheelEvent>) => {
@@ -226,8 +317,12 @@ const Canvas = ({
         y={state.stagePos.y}
         onClick={handleStageClick}
         onTap={handleStageClick}
+        onDblClick={() => {
+          if (state.isAddingPolygon) finalizePolygon();
+        }}
+        onMouseMove={handleStageMouseMove}
         onWheel={handleWheel}
-        draggable={!state.isScaleMode}
+        draggable={!state.isScaleMode && !state.isAddingPolygon}
         onDragEnd={(e) => {
           if (e.target === stageRef.current) {
             actions.setStagePos({ x: e.target.x(), y: e.target.y() });
@@ -254,6 +349,7 @@ const Canvas = ({
         </Layer>
 
         <Layer>
+          {/* 区画・テキスト（ゾーンより下） */}
           {state.placed.map((item) => {
             if (item.kind === 'text') {
               return (
@@ -271,22 +367,53 @@ const Canvas = ({
                 />
               );
             }
-            const type = typeMap.get(item.typeId);
-            return (
-              <ZoneItem
-                key={item.id}
-                item={item}
-                type={type}
-                scaleRatio={state.scaleRatio}
-                isSelected={item.id === state.selectedId}
-                isScaleMode={state.isScaleMode}
-                isAddingText={state.isAddingText}
-                onSelect={() => actions.setSelectedId(item.id)}
-                onChange={(attrs) => actions.updatePlaced(item.id, attrs)}
-                settings={settings}
-              />
-            );
+            if (item.kind === 'zone') {
+              const type = typeMap.get(item.typeId);
+              return (
+                <ZoneItem
+                  key={item.id}
+                  item={item}
+                  type={type}
+                  scaleRatio={state.scaleRatio}
+                  isSelected={item.id === state.selectedId}
+                  isScaleMode={state.isScaleMode}
+                  isAddingText={state.isAddingText}
+                  onSelect={() => actions.setSelectedId(item.id)}
+                  onChange={(attrs) => actions.updatePlaced(item.id, attrs)}
+                  settings={settings}
+                />
+              );
+            }
+            return null;
           })}
+
+          {/* ゾーン（多角形）: 区画の上に半透明で重ねる。表示トグルが ON のときのみ */}
+          {state.showZones &&
+            state.placed.map((item) => {
+              if (item.kind !== 'polygon') return null;
+              const count = residentsInPolygon(item, placedZones, zoneDims).total;
+              return (
+                <PolygonItem
+                  key={item.id}
+                  item={item}
+                  scaleRatio={state.scaleRatio}
+                  residentCount={count}
+                  isSelected={item.id === state.selectedId}
+                  interactive={!state.isScaleMode && !state.isAddingText && !state.isAddingPolygon}
+                  onSelect={() => actions.setSelectedId(item.id)}
+                  onChange={(attrs) => actions.updatePlaced(item.id, attrs)}
+                />
+              );
+            })}
+
+          {/* ゾーン作図中の下書き */}
+          {state.isAddingPolygon && polygonDraft.length > 0 && (
+            <PolygonDraft
+              points={polygonDraft}
+              cursor={cursorMeters}
+              scaleRatio={state.scaleRatio}
+            />
+          )}
         </Layer>
       </Stage>
     </div>
@@ -555,6 +682,167 @@ const TextItem = ({
           enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
         />
       )}
+    </>
+  );
+};
+
+/* ============================================================== */
+/* PolygonItem（ゾーン）                                          */
+/* ============================================================== */
+
+/** #RRGGBB と不透明度を rgba() 文字列へ変換（塗りのみ半透明、枠線は不透明に保つため）。 */
+const hexToRgba = (hex: string, alpha: number): string => {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const r = parseInt(m[1], 16);
+  const g = parseInt(m[2], 16);
+  const b = parseInt(m[3], 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const dashForStyle = (style: PolygonZone['strokeStyle']): number[] | undefined => {
+  if (style === 'dashed') return [10, 6];
+  if (style === 'dotted') return [2, 6];
+  return undefined;
+};
+
+type PolygonItemProps = {
+  item: PolygonZone;
+  scaleRatio: number;
+  residentCount: number;
+  isSelected: boolean;
+  interactive: boolean;
+  onSelect: () => void;
+  onChange: (attrs: Partial<PolygonZone>) => void;
+};
+
+const PolygonItem = ({
+  item,
+  scaleRatio,
+  residentCount,
+  isSelected,
+  interactive,
+  onSelect,
+  onChange,
+}: PolygonItemProps) => {
+  const groupRef = useRef<Konva.Group>(null);
+
+  const flatPoints = item.points.flatMap((p) => [p.x * scaleRatio, p.y * scaleRatio]);
+  const centroid = polygonCentroid(item.points);
+
+  return (
+    <Group
+      ref={groupRef}
+      draggable={isSelected && interactive}
+      onDragEnd={(e) => {
+        if (e.target !== groupRef.current) return; // 頂点ドラッグは除外
+        const node = groupRef.current;
+        if (!node) return;
+        const dxMeters = node.x() / scaleRatio;
+        const dyMeters = node.y() / scaleRatio;
+        node.position({ x: 0, y: 0 });
+        onChange({
+          points: item.points.map((p) => ({ x: p.x + dxMeters, y: p.y + dyMeters })),
+        });
+      }}
+    >
+      <Line
+        points={flatPoints}
+        closed
+        fill={hexToRgba(item.fillColor, item.fillOpacity)}
+        stroke={isSelected ? '#1565c0' : item.strokeColor}
+        strokeWidth={isSelected ? Math.max(item.strokeWidthPx, 2) : item.strokeWidthPx}
+        dash={dashForStyle(item.strokeStyle)}
+        lineJoin="round"
+        listening={interactive}
+        onClick={(e) => {
+          e.cancelBubble = true;
+          onSelect();
+        }}
+        onTap={(e) => {
+          e.cancelBubble = true;
+          onSelect();
+        }}
+      />
+      {item.showCount && (
+        <Text
+          x={centroid.x * scaleRatio - 60}
+          y={centroid.y * scaleRatio - 9}
+          width={120}
+          text={`${residentCount}人`}
+          align="center"
+          fill="#000000"
+          stroke="#ffffff"
+          strokeWidth={2}
+          fillAfterStrokeEnabled
+          fontStyle="bold"
+          fontSize={14}
+          listening={false}
+        />
+      )}
+      {isSelected &&
+        interactive &&
+        item.points.map((p, i) => (
+          <Circle
+            key={i}
+            x={p.x * scaleRatio}
+            y={p.y * scaleRatio}
+            radius={6}
+            fill="#ffffff"
+            stroke="#1565c0"
+            strokeWidth={2}
+            draggable
+            onDragEnd={(e) => {
+              e.cancelBubble = true;
+              const nx = e.target.x() / scaleRatio;
+              const ny = e.target.y() / scaleRatio;
+              const nextPoints = item.points.map((pt, j) => (j === i ? { x: nx, y: ny } : pt));
+              onChange({ points: nextPoints });
+            }}
+          />
+        ))}
+    </Group>
+  );
+};
+
+/* ============================================================== */
+/* PolygonDraft（作図中の下書き）                                 */
+/* ============================================================== */
+
+const PolygonDraft = ({
+  points,
+  cursor,
+  scaleRatio,
+}: {
+  points: Point[];
+  cursor: Point | null;
+  scaleRatio: number;
+}) => {
+  const flat = points.flatMap((p) => [p.x * scaleRatio, p.y * scaleRatio]);
+  const previewFlat = cursor
+    ? [...flat, cursor.x * scaleRatio, cursor.y * scaleRatio]
+    : flat;
+  return (
+    <>
+      <Line
+        points={previewFlat}
+        stroke="#1565c0"
+        strokeWidth={2}
+        dash={[6, 4]}
+        listening={false}
+      />
+      {points.map((p, i) => (
+        <Circle
+          key={i}
+          x={p.x * scaleRatio}
+          y={p.y * scaleRatio}
+          radius={i === 0 ? 7 : 5}
+          fill={i === 0 ? '#1565c0' : '#ffffff'}
+          stroke="#1565c0"
+          strokeWidth={2}
+          listening={false}
+        />
+      ))}
     </>
   );
 };

@@ -19,17 +19,24 @@ import {
   IconSettings,
   IconPhotoDown,
   IconUsers,
+  IconPolygon,
+  IconEye,
+  IconEyeOff,
 } from '@tabler/icons-react';
 
 type Props = {
   isScaleMode: boolean;
   isAddingText: boolean;
+  isAddingPolygon: boolean;
+  showZones: boolean;
   hasSelection: boolean;
   onLoadBackgroundImage: (file: File) => void;
   onToggleScaleMode: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onAddText: () => void;
+  onAddPolygon: () => void;
+  onToggleShowZones: () => void;
   onOpenResidentTypes: () => void;
   onRemoveSelected: () => void;
   onClearAll: () => void;
@@ -44,12 +51,16 @@ type Props = {
 const Toolbar = ({
   isScaleMode,
   isAddingText,
+  isAddingPolygon,
+  showZones,
   hasSelection,
   onLoadBackgroundImage,
   onToggleScaleMode,
   onZoomIn,
   onZoomOut,
   onAddText,
+  onAddPolygon,
+  onToggleShowZones,
   onOpenResidentTypes,
   onRemoveSelected,
   onClearAll,
@@ -129,6 +140,33 @@ const Toolbar = ({
           onClick={onAddText}
         >
           {isAddingText ? 'テキスト配置中…' : 'テキスト'}
+        </Button>
+      </Tooltip>
+
+      <Tooltip
+        label={
+          isAddingPolygon
+            ? 'クリックで頂点追加 / ダブルクリックか始点クリックで確定 / Esc で取消'
+            : 'ゾーン作図: 押してから頂点を順にクリック'
+        }
+      >
+        <Button
+          variant={isAddingPolygon ? 'filled' : 'default'}
+          color={isAddingPolygon ? 'blue' : undefined}
+          leftSection={<IconPolygon size={16} />}
+          onClick={onAddPolygon}
+        >
+          {isAddingPolygon ? 'ゾーン作図中…' : 'ゾーン'}
+        </Button>
+      </Tooltip>
+
+      <Tooltip label={showZones ? 'ゾーンを非表示にする' : 'ゾーンを表示する'}>
+        <Button
+          variant="default"
+          leftSection={showZones ? <IconEye size={16} /> : <IconEyeOff size={16} />}
+          onClick={onToggleShowZones}
+        >
+          {showZones ? 'ゾーン表示' : 'ゾーン非表示'}
         </Button>
       </Tooltip>
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  DEFAULT_POLYGON_STYLE,
   DEFAULT_RESIDENT_TYPES,
   DEFAULT_ZONE_LIST,
   INITIAL_SCALE_RATIO,
@@ -8,6 +9,7 @@ import type {
   LayoutFile,
   PlacedItem,
   PlacedZone,
+  PolygonZone,
   ResidentType,
   TextBlock,
   ZoneList,
@@ -38,6 +40,8 @@ export type LayoutState = {
   isScaleMode: boolean;
   scalePoints: Point[]; // world-px coords for scale calibration markers
   isAddingText: boolean; // テキスト配置モード（ボタン → クリックで配置）
+  isAddingPolygon: boolean; // ゾーン作図モード（クリックで頂点追加）
+  showZones: boolean; // ゾーン表示の ON/OFF（全ゾーン一括）
 };
 
 export type LayoutActions = {
@@ -49,6 +53,10 @@ export type LayoutActions = {
   setIsScaleMode: (m: boolean) => void;
   setScalePoints: (p: Point[]) => void;
   setIsAddingText: (v: boolean) => void;
+  setIsAddingPolygon: (v: boolean) => void;
+  setShowZones: (v: boolean) => void;
+  /** ゾーン（多角形）を追加する。points はメートル座標、3 点以上。 */
+  addPolygon: (points: Point[]) => void;
   addPlacedZone: (typeId: string, xMeters: number, yMeters: number) => void;
   addText: (xMeters: number, yMeters: number, text: string, fontSize: number, color: string) => void;
   updatePlaced: (id: string, attrs: Partial<PlacedItem>) => void;
@@ -85,6 +93,8 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
   const [isScaleMode, setIsScaleMode] = useState<boolean>(false);
   const [scalePoints, setScalePoints] = useState<Point[]>([]);
   const [isAddingText, setIsAddingText] = useState<boolean>(false);
+  const [isAddingPolygon, setIsAddingPolygon] = useState<boolean>(false);
+  const [showZones, setShowZones] = useState<boolean>(true);
 
   // IndexedDB から非同期に読み込み
   useEffect(() => {
@@ -156,6 +166,20 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     },
     [],
   );
+
+  const addPolygon = useCallback((points: Point[]) => {
+    if (points.length < 3) return;
+    setPlaced((prev) => {
+      const newPolygon: PolygonZone = {
+        kind: 'polygon',
+        id: `polygon-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        points: points.map((p) => ({ x: p.x, y: p.y })),
+        ...DEFAULT_POLYGON_STYLE,
+      };
+      setSelectedId(newPolygon.id);
+      return [...prev, newPolygon];
+    });
+  }, []);
 
   const updatePlaced = useCallback((id: string, attrs: Partial<PlacedItem>) => {
     setPlaced((prev) =>
@@ -278,6 +302,8 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     isScaleMode,
     scalePoints,
     isAddingText,
+    isAddingPolygon,
+    showZones,
     setBackground,
     setScaleRatio,
     setViewScale,
@@ -286,6 +312,9 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     setIsScaleMode,
     setScalePoints,
     setIsAddingText,
+    setIsAddingPolygon,
+    setShowZones,
+    addPolygon,
     addPlacedZone,
     addText,
     updatePlaced,
