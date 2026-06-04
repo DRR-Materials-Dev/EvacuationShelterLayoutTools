@@ -336,13 +336,10 @@ const LayoutPage = () => {
         onAddPolygon={handleToggleAddPolygon}
         onToggleShowZones={handleToggleShowZones}
         onOpenResidentTypes={() => setResidentTypesOpen(true)}
-        onOpenZoneEditor={() => setZoneEditorOpen(true)}
         onRemoveSelected={handleRemoveSelected}
         onClearAll={() => setClearAllConfirm(true)}
         onSaveLayout={handleSaveLayout}
         onLoadLayoutFile={(f) => void handleLoadLayoutFile(f)}
-        onLoadZoneListFile={handleLoadZoneListFile}
-        onResetZoneList={() => setResetZoneListConfirm(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onDownloadPng={handleDownloadPng}
       />
@@ -356,7 +353,12 @@ const LayoutPage = () => {
         onMove={actions.moveFloor}
       />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <ZonePalette zoneList={state.zoneList} />
+        <ZonePalette
+          zoneList={state.zoneList}
+          onEditZones={() => setZoneEditorOpen(true)}
+          onLoadZoneListFile={handleLoadZoneListFile}
+          onResetZoneList={() => setResetZoneListConfirm(true)}
+        />
         <Canvas
           state={state}
           actions={actions}
