@@ -8,10 +8,17 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 };
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  base: '/EvacuationShelterLayoutTools/',
-  define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
-  },
+// mode に 'collab' を含む場合（build:collab / dev:collab）はマルチ操作の配信ビルド。
+// Electron の埋め込みサーバ（または LAN 配信）がルート直下で配信するため base を相対に、
+// 出力を dist-collab に分離して GitHub Pages 版（dist）と混ざらないようにする。設計書 §9.9 / §9.15。
+export default defineConfig(({ mode }) => {
+  const isCollab = mode.startsWith('collab');
+  return {
+    plugins: [react()],
+    base: isCollab ? './' : '/EvacuationShelterLayoutTools/',
+    build: isCollab ? { outDir: 'dist-collab' } : {},
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
+  };
 });
