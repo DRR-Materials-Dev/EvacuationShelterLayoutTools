@@ -5,12 +5,20 @@ import type { ZoneList } from '../../shared/types.ts';
 
 type Props = {
   zoneList: ZoneList;
+  /** 区画リストの読込・初期化を許可するか（マルチ操作の参加者は false）。既定 true。 */
+  canLoad?: boolean;
   onEditZones: () => void;
   onLoadZoneListFile: (file: File) => void;
   onResetZoneList: () => void;
 };
 
-const ZonePalette = ({ zoneList, onEditZones, onLoadZoneListFile, onResetZoneList }: Props) => {
+const ZonePalette = ({
+  zoneList,
+  canLoad = true,
+  onEditZones,
+  onLoadZoneListFile,
+  onResetZoneList,
+}: Props) => {
   const listInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>, typeId: string) => {
@@ -41,23 +49,25 @@ const ZonePalette = ({ zoneList, onEditZones, onLoadZoneListFile, onResetZoneLis
               編集
             </Button>
           </Tooltip>
-          <Tooltip label="区画リスト (.list.json) を読み込む">
+          <Tooltip label={canLoad ? '区画リスト (.list.json) を読み込む' : '参加者は読み込めません（ホストのみ）'}>
             <Button
               size="xs"
               variant="light"
               leftSection={<IconList size={14} />}
               onClick={() => listInputRef.current?.click()}
+              disabled={!canLoad}
             >
               読込み
             </Button>
           </Tooltip>
-          <Tooltip label="区画リストを既定 (デフォルト) に戻す">
+          <Tooltip label={canLoad ? '区画リストを既定 (デフォルト) に戻す' : '参加者は初期化できません（ホストのみ）'}>
             <Button
               size="xs"
               variant="light"
               color="gray"
               leftSection={<IconRestore size={14} />}
               onClick={onResetZoneList}
+              disabled={!canLoad}
             >
               初期化
             </Button>

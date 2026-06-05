@@ -31,6 +31,8 @@ type Props = {
   isAddingPolygon: boolean;
   showZones: boolean;
   hasSelection: boolean;
+  /** 図面・レイアウトの読み込みを許可するか（マルチ操作の参加者は false で無効化）。既定 true。 */
+  canLoad?: boolean;
   onLoadBackgroundImage: (file: File) => void;
   onToggleScaleMode: () => void;
   onZoomIn: () => void;
@@ -54,6 +56,7 @@ const Toolbar = ({
   isAddingPolygon,
   showZones,
   hasSelection,
+  canLoad = true,
   onLoadBackgroundImage,
   onToggleScaleMode,
   onZoomIn,
@@ -85,11 +88,12 @@ const Toolbar = ({
       }}
       wrap="nowrap"
     >
-      <Tooltip label="施設の図面画像を読み込む">
+      <Tooltip label={canLoad ? '施設の図面画像を読み込む' : '参加者は図面の読み込みはできません（ホストのみ）'}>
         <Button
           variant="default"
           leftSection={<IconPhoto size={16} />}
           onClick={() => bgInputRef.current?.click()}
+          disabled={!canLoad}
           style={NO_SHRINK}
         >
           施設画像
@@ -209,22 +213,24 @@ const Toolbar = ({
       </Tooltip>
 
       <Group gap={4} ml="auto" wrap="nowrap" style={NO_SHRINK}>
-        <Tooltip label="サンプルのレイアウトを読み込む（ファイル選択不要）">
+        <Tooltip label={canLoad ? 'サンプルのレイアウトを読み込む（ファイル選択不要）' : '参加者は読み込みはできません（ホストのみ）'}>
           <Button
             variant="default"
             leftSection={<IconStar size={16} />}
             onClick={onLoadSample}
+            disabled={!canLoad}
             style={NO_SHRINK}
           >
             サンプル読込
           </Button>
         </Tooltip>
 
-        <Tooltip label="レイアウト (.layout.json) を読み込む">
+        <Tooltip label={canLoad ? 'レイアウト (.layout.json) を読み込む' : '参加者は読み込みはできません（ホストのみ）'}>
           <Button
             variant="default"
             leftSection={<IconUpload size={16} />}
             onClick={() => layoutInputRef.current?.click()}
+            disabled={!canLoad}
             style={{ ...NO_SHRINK, backgroundColor: LAYOUT_BTN_BG }}
           >
             レイアウト読込
