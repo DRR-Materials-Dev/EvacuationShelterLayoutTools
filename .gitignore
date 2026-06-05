@@ -9,8 +9,14 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-collab
 dist-ssr
 *.local
+
+# Electron インストーラ出力 / 生成アイコン
+release
+build/icon.png
+build/icon.svg
 
 # TypeScript incremental build cache
 *.tsbuildinfo

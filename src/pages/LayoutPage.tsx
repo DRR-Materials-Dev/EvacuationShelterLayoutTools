@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
 import { Modal, Button, Group, Text, Stack, TextInput } from '@mantine/core';
 import Konva from 'konva';
@@ -16,9 +16,22 @@ import PolygonPanel from '../tools/layout/PolygonPanel.tsx';
 import FloorTabs from '../tools/layout/FloorTabs.tsx';
 import ZoneEditorModal from '../tools/layout/ZoneEditorModal.tsx';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
+import PresenceSettingsModal from '../collab/PresenceSettingsModal.tsx';
 import { useLayoutState } from '../tools/layout/useLayoutState.ts';
+import { useCollabLayer } from '../collab/useCollabLayer.ts';
+import type { CollabSnapshot } from '../collab/session.ts';
+import { getElectronAPI } from '../collab/electron.ts';
+
+// 参加者招待モーダル（qrcode を含む）。Pages バンドルに混ぜないよう VITE_COLLAB ガード下で遅延読み込み。
+const SessionInfoModal =
+  import.meta.env.VITE_COLLAB === 'true'
+    ? lazy(() => import('../collab/SessionInfoModal.tsx'))
+    : null;
 import { getZoneResidentTotal, sumResidentsByType } from '../shared/types.ts';
-import type { PlacedZone } from '../shared/types.ts';
+import type { LayoutFile, PlacedItem, PlacedZone, ZoneList } from '../shared/types.ts';
+import type { Point } from '../tools/layout/types.ts';
+import type { StoredBackground } from '../shared/storage.ts';
+import { DEFAULT_ZONE_LIST } from '../shared/constants.ts';
 import { residentsInPolygon } from '../shared/geometry.ts';
 import {
   downloadLayout,
@@ -33,9 +46,136 @@ const SAMPLE_LAYOUT_FILENAME = '避難所レイアウトサンプル.layout.json
 import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
 
 const LayoutPage = () => {
-  const state = useLayoutState();
-  const actions = state; // 同オブジェクト（型上分離されているが実体は同じ）
+  const local = useLayoutState();
+
+  /* ---------- マルチ操作：collab 有効ビルドはレイアウト文書（全階層）を Yjs 同期に差し替える ---------- */
+  // 設計書 §9.16 / §9.17。同期対象＝全階層 floors（各 placed/背景/縮尺）＋区画リスト＋居住者種類。
+  // アクティブ階層・選択等の UI は各ユーザーローカル。collab 無効ビルドは従来経路をそのまま使う。
+  const collabSeed: CollabSnapshot = {
+    floors: local.floors,
+    zoneList: local.zoneList,
+    zoneListName: local.zoneListName,
+    residentTypes: local.residentTypes,
+  };
+  const collab = useCollabLayer(collabSeed);
+  const useShared = collab.active && collab.ready;
+  const canLoad = !collab.active || collab.isHost; // 参加者は図面/レイアウト読込を禁止
+
+  // 共有 floors からアクティブ階層を解決（ローカル activeFloorId が無効なら先頭にフォールバック）。
+  const sharedFloors = collab.snapshot.floors;
+  const sharedActiveFloor = useShared
+    ? (sharedFloors.find((f) => f.id === local.activeFloorId) ?? sharedFloors[0])
+    : undefined;
+  const effectiveFloorId = sharedActiveFloor?.id ?? local.activeFloorId;
+
+  const state: typeof local = useMemo(() => {
+    if (!useShared) return local;
+    const s = collab.snapshot;
+    return {
+      ...local,
+      floors: sharedFloors,
+      activeFloorId: effectiveFloorId,
+      placed: sharedActiveFloor?.placed ?? [],
+      background: sharedActiveFloor?.background ?? null,
+      scaleRatio: sharedActiveFloor?.scaleRatio ?? local.scaleRatio,
+      zoneList: s.zoneList ?? local.zoneList,
+      zoneListName: s.zoneListName ?? local.zoneListName,
+      residentTypes: s.residentTypes ?? local.residentTypes,
+    };
+  }, [useShared, collab.snapshot, sharedFloors, sharedActiveFloor, effectiveFloorId, local]);
+
+  const actions: typeof local = useMemo(() => {
+    if (!useShared) return local;
+    const fid = effectiveFloorId;
+    return {
+      ...local,
+      /* placed（アクティブ階層） */
+      updatePlaced: (id: string, attrs: Partial<PlacedItem>) => collab.updatePlaced(fid, id, attrs),
+      setZoneResidents: (id: string, residents: Record<string, number>) =>
+        collab.setZoneResidents(fid, id, residents),
+      removePlaced: (id: string) => {
+        collab.removePlaced(fid, id);
+        if (local.selectedId === id) local.setSelectedId(null);
+      },
+      addPlacedZone: (typeId: string, x: number, y: number) => {
+        local.setSelectedId(collab.addPlacedZone(fid, typeId, x, y));
+      },
+      addText: (x: number, y: number, text: string, fontSize: number, color: string) => {
+        local.setSelectedId(collab.addText(fid, x, y, text, fontSize, color));
+      },
+      addPolygon: (points: Point[]) => {
+        const id = collab.addPolygon(fid, points);
+        if (id) local.setSelectedId(id);
+      },
+      /* 階層レベル */
+      setBackground: (bg: StoredBackground | null) => collab.setBackground(fid, bg),
+      setScaleRatio: (r: number) => collab.setScaleRatio(fid, r),
+      setResidentTypes: collab.setResidentTypes,
+      /* 区画リスト編集（全員へ同期。ローカル版も呼んで IndexedDB 等の副作用は維持） */
+      applyZoneListEdits: (list: ZoneList) => {
+        collab.setZoneList(list, list.name);
+        local.applyZoneListEdits(list);
+      },
+      saveSharedZoneList: (list: ZoneList) => {
+        collab.setZoneList(list, list.name);
+        local.saveSharedZoneList(list);
+      },
+      replaceZoneList: (list: ZoneList) => {
+        collab.replaceZoneListClearPlaced(list, list.name);
+        local.replaceZoneList(list);
+      },
+      resetZoneListToDefault: () => {
+        collab.replaceZoneListClearPlaced(DEFAULT_ZONE_LIST, DEFAULT_ZONE_LIST.name);
+        local.resetZoneListToDefault();
+      },
+      clearAll: () => {
+        collab.clearFloor(fid);
+        local.setSelectedId(null);
+      },
+      loadLayout: (layout: LayoutFile) => {
+        collab.loadLayout(layout);
+        local.setSelectedId(null);
+        if (layout.floors[0]) local.setActiveFloor(layout.floors[0].id);
+      },
+      // 保存は共有スナップショット（全階層＋区画リスト＋居住者種類）から組み立てる。
+      buildLayoutFile: (): LayoutFile => ({
+        version: 2,
+        zoneListName: collab.snapshot.zoneListName ?? local.zoneListName,
+        residentTypes: collab.snapshot.residentTypes ?? local.residentTypes,
+        zoneList: collab.snapshot.zoneList ?? local.zoneList,
+        floors: collab.snapshot.floors,
+      }),
+      /* 階層タブ操作（全員へ同期） */
+      addFloor: () => local.setActiveFloor(collab.addFloor()),
+      removeFloor: (id: string) => {
+        collab.removeFloor(id);
+        if (local.activeFloorId === id) {
+          const remaining = sharedFloors.filter((f) => f.id !== id);
+          if (remaining[0]) local.setActiveFloor(remaining[0].id);
+        }
+      },
+      renameFloor: (id: string, name: string) => collab.renameFloor(id, name),
+      moveFloor: (id: string, dir: -1 | 1) => collab.moveFloor(id, dir),
+      setActiveFloor: (id: string) => local.setActiveFloor(id),
+    };
+  }, [useShared, effectiveFloorId, sharedFloors, collab, local]);
   const stageRef = useRef<Konva.Stage | null>(null);
+
+  /* ---------- マルチ操作：プレゼンス（カーソル・選択） ---------- */
+  const { updatePresence } = collab;
+  // 自分の表示中の階層・選択を共有
+  useEffect(() => {
+    if (!useShared) return;
+    updatePresence({ floorId: effectiveFloorId, selectedId: local.selectedId });
+  }, [useShared, effectiveFloorId, local.selectedId, updatePresence]);
+  const handleCursorMove = useCallback(
+    (meters: Point | null) => updatePresence({ cursor: meters }),
+    [updatePresence],
+  );
+  // 現在の階層にいる他ユーザーのみ表示
+  const remotePresence = useShared
+    ? collab.presence.filter((p) => p.floorId === effectiveFloorId)
+    : undefined;
 
   const [scaleModal, setScaleModal] = useState<{ opened: boolean; distancePx: number }>({
     opened: false,
@@ -54,6 +194,9 @@ const LayoutPage = () => {
     name: '',
   });
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [presenceSettingsOpen, setPresenceSettingsOpen] = useState(false);
+  const isElectronHost = getElectronAPI() !== null;
 
   /* ---------- 区画リスト未保存時のナビゲーションガード（設計書 §8.2） ---------- */
   const blocker = useBlocker(state.zoneListDirty);
@@ -358,12 +501,75 @@ const LayoutPage = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <AppHeader title="避難所レイアウト" />
+      {collab.active && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '4px 12px',
+            fontSize: 12,
+            background: collab.status === 'connected' ? '#e6f4ea' : '#fdecea',
+            color: collab.status === 'connected' ? '#1b5e20' : '#b71c1c',
+            borderBottom: '1px solid rgba(0,0,0,0.1)',
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            マルチ操作 ／ ルーム: {collab.room} ／ 役割: {collab.isHost ? 'ホスト' : '参加者'} ／ 状態:{' '}
+            {collab.status === 'connected' ? '接続中' : collab.status === 'connecting' ? '接続待ち' : '切断'}
+            {' '}（区画の移動・追加・削除のみ同期。閲覧ロールは紳士協定で保証なし）
+          </span>
+          {collab.localUser && (
+            <Group gap={6} wrap="nowrap" align="center">
+              <span
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  background: collab.localUser.color,
+                  border: '1px solid rgba(0,0,0,0.25)',
+                  flex: '0 0 auto',
+                }}
+              />
+              <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {collab.localUser.name}
+              </span>
+              <Button
+                size="compact-xs"
+                variant="default"
+                onClick={() => setPresenceSettingsOpen(true)}
+              >
+                表示名・色
+              </Button>
+            </Group>
+          )}
+          {isElectronHost && (
+            <Button size="compact-xs" variant="filled" onClick={() => setInviteOpen(true)}>
+              参加者を招待（URL）
+            </Button>
+          )}
+        </div>
+      )}
+      {SessionInfoModal && inviteOpen && (
+        <Suspense fallback={null}>
+          <SessionInfoModal onClose={() => setInviteOpen(false)} />
+        </Suspense>
+      )}
+      {collab.localUser && presenceSettingsOpen && (
+        <PresenceSettingsModal
+          opened
+          user={collab.localUser}
+          onApply={collab.setLocalUser}
+          onClose={() => setPresenceSettingsOpen(false)}
+        />
+      )}
       <Toolbar
         isScaleMode={state.isScaleMode}
         isAddingText={state.isAddingText}
         isAddingPolygon={state.isAddingPolygon}
         showZones={state.showZones}
         hasSelection={state.selectedId !== null}
+        canLoad={canLoad}
         onLoadBackgroundImage={handleLoadBackground}
         onToggleScaleMode={handleToggleScaleMode}
         onZoomIn={handleZoomIn}
@@ -392,6 +598,7 @@ const LayoutPage = () => {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <ZonePalette
           zoneList={state.zoneList}
+          canLoad={canLoad}
           onEditZones={() => setZoneEditorOpen(true)}
           onLoadZoneListFile={handleLoadZoneListFile}
           onResetZoneList={() => setResetZoneListConfirm(true)}
@@ -403,6 +610,8 @@ const LayoutPage = () => {
           onTextPlaceRequested={handleTextPlaceRequested}
           onTextEditRequested={setEditingTextId}
           stageRef={stageRef}
+          remotePresence={remotePresence}
+          onCursorMove={useShared ? handleCursorMove : undefined}
         />
         {selectedZone && selectedZone.kind === 'zone' && (
           <SelectionPanel
