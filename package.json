@@ -1,14 +1,23 @@
 {
   "name": "evacuation-shelter-layout-tools",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
+  "description": "避難所レイアウト検討ツール（マルチ操作対応・ホスト用デスクトップアプリ）",
+  "author": "Smart Implement Naoyuki Shiba",
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "dev:collab": "vite --host --mode collab-dev",
+    "build:collab": "tsc -b && vite build --mode collab",
+    "collab:server": "node collab-server/server.mjs",
+    "icon": "node electron/make-icon.mjs",
+    "electron:dev": "npm run build:collab && electron .",
+    "electron:build": "npm run icon && npm run build:collab && electron-builder --win nsis"
   },
   "dependencies": {
     "@mantine/core": "^9.1.1",
@@ -16,11 +25,17 @@
     "@tabler/icons-react": "^3.44.0",
     "idb-keyval": "^6.2.2",
     "konva": "^10.2.0",
+    "lib0": "^0.2.117",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-konva": "^19.2.1",
     "react-router-dom": "^7.15.0",
-    "use-image": "^1.1.4"
+    "sirv": "^3.0.2",
+    "use-image": "^1.1.4",
+    "ws": "^8.21.0",
+    "y-protocols": "^1.0.7",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.31"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -28,12 +43,47 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "electron": "^42.3.3",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "sharp": "^0.34.5",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.2",
     "vite": "^7.2.4"
+  },
+  "build": {
+    "appId": "jp.smartimplement.evac-layout-collab",
+    "productName": "避難所レイアウト（コラボ）",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist-collab/**/*",
+      "collab-server/hub.mjs",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "dist-collab/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "避難所レイアウト（コラボ）",
+      "runAfterFinish": true,
+      "license": "build/license_ja.txt"
+    }
   }
 }

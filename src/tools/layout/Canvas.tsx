@@ -10,11 +10,14 @@ import {
   Circle,
   Line,
   Transformer,
+  Label,
+  Tag,
 } from 'react-konva';
 import useImage from 'use-image';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { Box } from 'konva/lib/shapes/Transformer';
-import type { PlacedZone, PolygonZone, TextBlock, ZoneType } from '../../shared/types.ts';
+import type { PlacedItem, PlacedZone, PolygonZone, TextBlock, ZoneType } from '../../shared/types.ts';
+import type { RemotePresence } from '../../collab/session.ts';
 import {
   getZoneBorder,
   getZoneDisplayText,
@@ -39,6 +42,10 @@ type Props = {
   /** テキスト要素をダブルクリックした時、編集モーダルの起動を依頼 */
   onTextEditRequested: (textId: string) => void;
   stageRef: RefObject<Konva.Stage | null>;
+  /** マルチ操作：他ユーザーのプレゼンス（カーソル・選択。現在の階層のみ）。 */
+  remotePresence?: RemotePresence[];
+  /** マルチ操作：ローカルカーソル位置（メートル）を通知。範囲外は null。 */
+  onCursorMove?: (meters: Point | null) => void;
 };
 
 const BackgroundImageDisplay = ({
@@ -50,6 +57,77 @@ const BackgroundImageDisplay = ({
   return <KonvaImage image={img} x={0} y={0} width={background.width} height={background.height} />;
 };
 
+/** マルチ操作：他ユーザー 1 人ぶんのカーソル＋選択マーカー（world-px 座標、画面上で一定サイズ）。 */
+const RemotePresenceMarker = ({
+  presence,
+  placed,
+  typeMap,
+  scaleRatio,
+  viewScale,
+}: {
+  presence: RemotePresence;
+  placed: PlacedItem[];
+  typeMap: Map<string, ZoneType>;
+  scaleRatio: number;
+  viewScale: number;
+}) => {
+  const inv = 1 / viewScale; // ズームに依らず画面上で一定サイズに保つ
+  const { color, name } = presence.user;
+
+  let selAnchor: { x: number; y: number } | null = null;
+  if (presence.selectedId) {
+    const item = placed.find((it) => it.id === presence.selectedId);
+    if (item) {
+      if (item.kind === 'polygon') {
+        const c = polygonCentroid(item.points);
+        selAnchor = { x: c.x * scaleRatio, y: c.y * scaleRatio };
+      } else if (item.kind === 'zone') {
+        const t = typeMap.get(item.typeId);
+        const w = item.width ?? t?.width ?? 1;
+        const h = item.height ?? t?.height ?? 1;
+        selAnchor = { x: (item.x + w / 2) * scaleRatio, y: (item.y + h / 2) * scaleRatio };
+      } else {
+        selAnchor = { x: item.x * scaleRatio, y: item.y * scaleRatio };
+      }
+    }
+  }
+
+  const cursor = presence.cursor
+    ? { x: presence.cursor.x * scaleRatio, y: presence.cursor.y * scaleRatio }
+    : null;
+
+  return (
+    <Group listening={false}>
+      {selAnchor && (
+        <Circle
+          x={selAnchor.x}
+          y={selAnchor.y}
+          radius={16 * inv}
+          stroke={color}
+          strokeWidth={2.5 * inv}
+          dash={[7 * inv, 4 * inv]}
+        />
+      )}
+      {cursor && (
+        <>
+          <Circle
+            x={cursor.x}
+            y={cursor.y}
+            radius={5 * inv}
+            fill={color}
+            stroke="#fff"
+            strokeWidth={1.5 * inv}
+          />
+          <Label x={cursor.x + 8 * inv} y={cursor.y + 8 * inv}>
+            <Tag fill={color} cornerRadius={3 * inv} />
+            <Text text={name} fontSize={12 * inv} fill="#ffffff" padding={3 * inv} />
+          </Label>
+        </>
+      )}
+    </Group>
+  );
+};
+
 const Canvas = ({
   state,
   actions,
@@ -57,8 +135,11 @@ const Canvas = ({
   onTextPlaceRequested,
   onTextEditRequested,
   stageRef,
+  remotePresence,
+  onCursorMove,
 }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const cursorThrottleRef = useRef(0);
   const { settings } = useUserSettings();
   const [size, setSize] = useState({ width: 800, height: 600 });
 
@@ -228,15 +309,22 @@ const Canvas = ({
     ],
   );
 
-  // ゾーン作図中はカーソル位置を追跡してプレビュー線を描く
+  // カーソル位置を追跡（ゾーン作図プレビュー線用＋マルチ操作のプレゼンス通知用）
   const handleStageMouseMove = useCallback(() => {
-    if (!state.isAddingPolygon) return;
     const stage = stageRef.current;
     if (!stage) return;
     const pos = stage.getRelativePointerPosition();
     if (!pos) return;
-    setCursorMeters({ x: pos.x / state.scaleRatio, y: pos.y / state.scaleRatio });
-  }, [state.isAddingPolygon, state.scaleRatio, stageRef]);
+    const meters = { x: pos.x / state.scaleRatio, y: pos.y / state.scaleRatio };
+    if (onCursorMove) {
+      const now = Date.now();
+      if (now - cursorThrottleRef.current > 40) {
+        cursorThrottleRef.current = now;
+        onCursorMove(meters);
+      }
+    }
+    if (state.isAddingPolygon) setCursorMeters(meters);
+  }, [state.isAddingPolygon, state.scaleRatio, stageRef, onCursorMove]);
 
   const handleWheel = useCallback(
     (e: KonvaEventObject<WheelEvent>) => {
@@ -298,6 +386,7 @@ const Canvas = ({
       ref={containerRef}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      onMouseLeave={() => onCursorMove?.(null)}
       style={{
         flex: 1,
         position: 'relative',
@@ -415,6 +504,22 @@ const Canvas = ({
             />
           )}
         </Layer>
+
+        {/* マルチ操作：他ユーザーのカーソル・選択（現在の階層のみ） */}
+        {remotePresence && remotePresence.length > 0 && (
+          <Layer listening={false}>
+            {remotePresence.map((p) => (
+              <RemotePresenceMarker
+                key={p.clientId}
+                presence={p}
+                placed={state.placed}
+                typeMap={typeMap}
+                scaleRatio={state.scaleRatio}
+                viewScale={state.viewScale}
+              />
+            ))}
+          </Layer>
+        )}
       </Stage>
     </div>
   );
