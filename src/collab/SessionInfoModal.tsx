@@ -1,8 +1,13 @@
 /**
- * 参加者の招待モーダル（Electron ホストアプリ専用）。設計書 §9.15 / §9.17。
- * 参加用 URL を表示・コピーする。参加者は PC のブラウザで開く前提（QR は廃止）。
+ * 参加者の招待モーダル（Electron ホストアプリ専用）。設計書 §9.15 / §9.17 / §9.23。
+ *
+ * 参加用 URL を「テキスト＋コピー」と「QR コード」の両方で提示する。
+ * §9.17 で一度 QR を廃止したが（参加者は PC 前提のため）、インターネットに繋がらない
+ * 閉じた LAN では URL をコピーしても相手に送れない。QR をスマートフォンで読み取って
+ * URL を確認し、PC へ手入力する導線が必要なため復活させた。
  */
 import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { Button, Code, CopyButton, Group, Modal, Select, Stack, Text } from '@mantine/core';
 import { getElectronAPI, type CollabSessionInfo } from './electron.ts';
 
@@ -19,6 +24,7 @@ const networkOptions = (info: CollabSessionInfo) =>
 const SessionInfoModal = ({ onClose }: { onClose: () => void }) => {
   const [info, setInfo] = useState<CollabSessionInfo | null>(null);
   const [selectedIp, setSelectedIp] = useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const api = getElectronAPI();
@@ -31,6 +37,21 @@ const SessionInfoModal = ({ onClose }: { onClose: () => void }) => {
 
   const url =
     info && selectedIp ? `http://${selectedIp}:${info.port}/?room=${info.room}#/layout` : '';
+
+  // 選択中のアドレスが変わると URL も変わるので QR を作り直す。
+  // setState は非同期パスでのみ呼ぶ（同期的に呼ぶと react-hooks/set-state-in-effect に触れる）。
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const data = url
+        ? await QRCode.toDataURL(url, { width: 200, margin: 1 }).catch(() => null)
+        : null;
+      if (!cancelled) setQrDataUrl(data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
 
   return (
     <Modal
@@ -70,6 +91,22 @@ const SessionInfoModal = ({ onClose }: { onClose: () => void }) => {
                 )}
               </CopyButton>
             </Group>
+            {qrDataUrl && (
+              <Stack gap={4} align="center">
+                <img
+                  src={qrDataUrl}
+                  alt="参加用 URL の QR コード"
+                  width={200}
+                  height={200}
+                  style={{ background: '#fff', padding: 8, borderRadius: 4 }}
+                />
+                <Text size="xs" c="dimmed" ta="center">
+                  スマートフォンのカメラで読み取ると URL を確認できます。
+                  <br />
+                  （表示された URL を参加者の PC に入力してください）
+                </Text>
+              </Stack>
+            )}
             <Text size="xs" c="dimmed">
               ※ 参加者は PC（スマートフォン非対応）のブラウザでご利用ください。<br />
               ⚠ 通信は暗号化されていません（ws://）。信頼できる LAN 内でのみ使用し、機微・実在の図面や

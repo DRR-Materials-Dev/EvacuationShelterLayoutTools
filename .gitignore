@@ -33,3 +33,7 @@ build/icon.svg
 *.njsproj
 *.sln
 *.sw?
+
+# 実験用の手順書（配布物。Markdown から必要なときに生成する）
+マルチ操作実験_手順書.md
+マルチ操作実験_手順書.pdf

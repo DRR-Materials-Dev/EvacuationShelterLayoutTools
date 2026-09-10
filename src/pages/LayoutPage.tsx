@@ -545,7 +545,7 @@ const LayoutPage = () => {
           )}
           {isElectronHost && (
             <Button size="compact-xs" variant="filled" onClick={() => setInviteOpen(true)}>
-              参加者を招待（URL）
+              参加者を招待（URL・QR）
             </Button>
           )}
         </div>
