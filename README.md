@@ -109,9 +109,11 @@ npm run dev
 ### 型チェック・lint・ビルド
 
 ```bash
-npm run typecheck   # tsc -b --noEmit
-npm run lint        # eslint .
-npm run build       # tsc -b && vite build → dist/ に生成
+npm run typecheck        # tsc -b --noEmit
+npm run lint             # eslint .
+npm run build            # GitHub Pages 版 → dist/ に生成
+npm run build:collab     # コラボ版 Web アセット → dist-collab/ に生成
+npm run build:standalone # 単体動作版 Web アセット → dist-standalone/ に生成
 ```
 
 ### マルチ操作（同時編集 / 実験的）
@@ -165,6 +167,68 @@ npm run electron:build  # Windows 向け NSIS インストーラを release/ に
 > - ルームに接続できる相手は文書を**読み書きできます**（認証・閲覧専用ロールの強制はありません＝紳士協定）。
 > - **機微・実在の図面や個人が特定され得る情報を扱わないでください。** 本ツールは利用者がアップロードした内容について責任を負いません。
 > - 詳細なリスクと設計判断は [設計書.md](設計書.md) §9.13 / §9.7 / §9.14 / §9.15 を参照してください。
+
+## デスクトップアプリ（インストーラ）
+
+Windows 向けに **2 種類**のインストーラを生成できます。`appId` が異なるため、
+**同じ PC に併存インストールできます**（設計書 §9.20）。
+
+| | 単体動作版 | コラボ版 |
+| --- | --- | --- |
+| ショートカット名 | 避難所レイアウト | 避難所レイアウト（コラボ） |
+| マルチ操作（同時編集） | なし | あり（ホストとして動作） |
+| ネットワーク公開 | **しない**（127.0.0.1 のみ） | LAN に公開して参加者を受け入れる |
+| 想定用途 | 一人で使う / オフライン端末 / 参加者の持ち帰り検討 | 訓練・検討会でホスト役を担う PC |
+| 生成コマンド | `npm run electron:build:standalone` | `npm run electron:build` |
+| 出力先 | `release-standalone/` | `release/` |
+
+```bash
+npm run electron:build:all   # 2 種類をまとめて生成
+```
+
+生成されるファイル:
+
+* `release-standalone/EvacuationShelterLayout-Standalone-Setup-<version>.exe`
+* `release/EvacuationShelterLayout-Collab-Setup-<version>.exe`
+
+いずれも NSIS 形式で、インストール時に**使用許諾契約（EULA）**を表示し、インストール先の変更と
+デスクトップ／スタートメニューへのショートカット作成に対応します。**ユーザー単位インストール
+（管理者権限不要）**です。
+
+> 署名なし配布のため、初回起動時に Windows Defender SmartScreen の警告が出ることがあります。
+> 「詳細情報」→「実行」で起動できます。社内配布時は管理者に確認してください。
+
+両者は userData を分けてあるため（`%APPDATA%\EvacuationShelterLayout` /
+`...Collab`）、**同時に起動できます**。データも互いに独立しています。
+
+#### ⚠ ホスト役の PC で事前に確認すること（コラボ版）
+
+参加者が接続できない場合、ほぼ次のどちらかです。
+
+1. **参加用アドレスの選び間違い**
+   招待モーダルの「ネットワーク」で、**参加者と同じ Wi‑Fi / 有線 LAN のアドレス**を選んでください。
+   VPN（Tailscale 等）やリンクローカルは候補から除外済みですが、モバイルホットスポットや
+   仮想 NIC（VMware / Hyper‑V / Docker）のアドレスは残ります。選択肢にはインターフェース名が
+   併記されるので、`192.168.0.132（Wi-Fi）` のように確認して選びます。
+2. **ファイアウォールの受信ブロック**
+   Windows ファイアウォールだけでなく、**ESET などのセキュリティ製品が実際の門番になっている
+   ことがあります**（その場合 Windows 側に規則を足しても効きません）。製品側でアプリ単位の
+   受信許可を追加してください。切り分けは「ファイアウォールを一時的に無効化して繋がるか」が最速です。
+
+> **確認は ping ではなく URL で行ってください。** Windows もセキュリティ製品も ICMP 応答を既定で
+> ブロックすることが多く、HTTP は通るのに ping だけ通らない状況が普通に起こります。
+
+使用ポートは単体動作版が `34580` 前後、コラボ版が `34590` 前後です（使用中なら自動でずれます）。
+
+**単体動作版はセキュリティ免責（下記）の対象外です。** LAN へ何も公開せず、データは端末内に
+留まるため、コラボ版のような盗聴・なりすましのリスクを持ちません。
+
+### インストールせずに動作確認する
+
+```bash
+npm run electron:dev              # コラボ版ホストアプリを起動
+npm run electron:dev:standalone   # 単体動作版を起動
+```
 
 ## 作者
 

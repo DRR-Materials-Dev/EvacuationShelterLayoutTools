@@ -182,16 +182,50 @@ const setupConnection = (conn, docName) => {
   }
 };
 
-/** このマシンの LAN 向け IPv4 アドレス一覧を返す。 */
-export const getLanIps = () => {
-  const ips = [];
-  for (const ifaces of Object.values(networkInterfaces())) {
-    for (const i of ifaces ?? []) {
-      if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
+/**
+ * 同じ Wi‑Fi にいる参加者から到達できないアドレスを除外する。設計書 §9.21。
+ * VPN の CGNAT（Tailscale 等）やリンクローカルを提示すると、参加者は原理的に接続できない。
+ */
+const isReachableLan = (ip) => {
+  const [a, b] = ip.split('.').map(Number);
+  if (a === 127) return false; // ループバック
+  if (a === 169 && b === 254) return false; // リンクローカル（APIPA / Bluetooth PAN 等）
+  if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT（Tailscale 等の VPN）
+  return true;
+};
+
+/**
+ * 提示順の優先度（小さいほど先）。実 LAN を最優先にし、
+ * Windows のモバイルホットスポット（192.168.137.x）は正当な用途もあるため残しつつ後ろへ回す。
+ */
+const lanPriority = (ip) => {
+  const [a, b] = ip.split('.').map(Number);
+  if (ip.startsWith('192.168.137.')) return 2; // モバイルホットスポット / ICS
+  if (a === 192 && b === 168) return 0;
+  if (a === 10) return 0;
+  if (a === 172 && b >= 16 && b <= 31) return 0;
+  return 1;
+};
+
+/**
+ * このマシンの LAN 向け IPv4 を、インターフェース名付きで優先順に返す。
+ * 除外した結果ゼロ件になる場合だけは、選択肢を失わないよう未フィルタの一覧を返す。
+ */
+export const getLanInterfaces = () => {
+  const all = [];
+  for (const [iface, addrs] of Object.entries(networkInterfaces())) {
+    for (const i of addrs ?? []) {
+      if (i.family === 'IPv4' && !i.internal) all.push({ address: i.address, iface });
     }
   }
-  return ips;
+  const usable = all.filter((i) => isReachableLan(i.address));
+  return (usable.length > 0 ? usable : all).sort(
+    (x, y) => lanPriority(x.address) - lanPriority(y.address),
+  );
 };
+
+/** このマシンの LAN 向け IPv4 アドレス一覧を優先順に返す。 */
+export const getLanIps = () => getLanInterfaces().map((i) => i.address);
 
 /**
  * ハブを起動する。
@@ -200,10 +234,10 @@ export const getLanIps = () => {
  * @param {string} [opts.host='0.0.0.0']
  * @param {string} [opts.staticDir] 指定時はこのディレクトリを SPA 配信する。
  * @param {(room: string, peer: string, kind: 'join'|'leave') => void} [opts.onConn] 接続ログ用。
- * @returns {Promise<{ port: number, host: string, lanIps: string[], close: () => Promise<void> }>}
+ * @returns {Promise<{ port: number, host: string, lanIps: string[], lanNetworks: {address: string, iface: string}[], close: () => Promise<void> }>}
  */
 export const startHub = ({ port = 0, host = '0.0.0.0', staticDir, onConn } = {}) =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     const serve = staticDir ? sirv(staticDir, { single: true, dev: false, etag: true }) : null;
 
     const server = createServer((req, res) => {
@@ -236,6 +270,9 @@ export const startHub = ({ port = 0, host = '0.0.0.0', staticDir, onConn } = {})
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
     });
 
+    // ポート使用中などの listen 失敗を呼び出し側へ伝える（固定ポートの再試行に必要）。
+    server.on('error', reject);
+
     server.listen(port, host, () => {
       const addr = server.address();
       const boundPort = typeof addr === 'object' && addr ? addr.port : port;
@@ -243,6 +280,7 @@ export const startHub = ({ port = 0, host = '0.0.0.0', staticDir, onConn } = {})
         port: boundPort,
         host,
         lanIps: getLanIps(),
+        lanNetworks: getLanInterfaces(),
         close: () =>
           new Promise((done) => {
             for (const ws of wss.clients) {

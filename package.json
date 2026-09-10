@@ -1,7 +1,7 @@
 {
   "name": "evacuation-shelter-layout-tools",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.4.0",
   "type": "module",
   "description": "避難所レイアウト検討ツール（マルチ操作対応・ホスト用デスクトップアプリ）",
   "author": "Smart Implement Naoyuki Shiba",
@@ -16,8 +16,12 @@
     "build:collab": "tsc -b && vite build --mode collab",
     "collab:server": "node collab-server/server.mjs",
     "icon": "node electron/make-icon.mjs",
-    "electron:dev": "npm run build:collab && electron .",
-    "electron:build": "npm run icon && npm run build:collab && electron-builder --win nsis"
+    "build:standalone": "tsc -b && vite build --mode standalone",
+    "electron:dev": "npm run build:collab && electron . --app-mode=collab",
+    "electron:dev:standalone": "npm run build:standalone && electron . --app-mode=standalone",
+    "electron:build": "npm run icon && npm run build:collab && electron-builder --win nsis",
+    "electron:build:standalone": "npm run icon && npm run build:standalone && electron-builder --win nsis --config electron-builder.standalone.json",
+    "electron:build:all": "npm run electron:build && npm run electron:build:standalone"
   },
   "dependencies": {
     "@mantine/core": "^9.1.1",
@@ -83,7 +87,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "避難所レイアウト（コラボ）",
       "runAfterFinish": true,
-      "license": "build/license_ja.txt"
+      "license": "build/license_ja.txt",
+      "artifactName": "EvacuationShelterLayout-Collab-Setup-${version}.${ext}"
     }
   }
 }

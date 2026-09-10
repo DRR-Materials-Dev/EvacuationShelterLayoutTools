@@ -6,6 +6,16 @@ import { useEffect, useState } from 'react';
 import { Button, Code, CopyButton, Group, Modal, Select, Stack, Text } from '@mantine/core';
 import { getElectronAPI, type CollabSessionInfo } from './electron.ts';
 
+/**
+ * 選択肢のラベルにインターフェース名を併記する（例: `192.168.0.132（Wi-Fi）`）。
+ * どのネットワークのアドレスなのかが分からないと選び間違えるため。設計書 §9.21。
+ */
+const networkOptions = (info: CollabSessionInfo) =>
+  info.lanIps.map((address) => {
+    const iface = info.lanNetworks?.find((n) => n.address === address)?.iface;
+    return { value: address, label: iface ? `${address}（${iface}）` : address };
+  });
+
 const SessionInfoModal = ({ onClose }: { onClose: () => void }) => {
   const [info, setInfo] = useState<CollabSessionInfo | null>(null);
   const [selectedIp, setSelectedIp] = useState<string | null>(null);
@@ -40,7 +50,8 @@ const SessionInfoModal = ({ onClose }: { onClose: () => void }) => {
         {info && info.lanIps.length > 1 && (
           <Select
             label="ネットワーク（参加者と同じものを選んでください）"
-            data={info.lanIps}
+            description="参加者が接続している Wi‑Fi / 有線 LAN と同じものを選びます。"
+            data={networkOptions(info)}
             value={selectedIp}
             onChange={setSelectedIp}
             allowDeselect={false}

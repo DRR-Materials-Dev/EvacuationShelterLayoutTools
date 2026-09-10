@@ -10,11 +10,13 @@ lerna-debug.log*
 node_modules
 dist
 dist-collab
+dist-standalone
 dist-ssr
 *.local
 
 # Electron インストーラ出力 / 生成アイコン
 release
+release-standalone
 build/icon.png
 build/icon.svg
 

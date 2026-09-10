@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "jp.smartimplement.evac-layout-standalone",
+  "productName": "避難所レイアウト",
+  "directories": {
+    "output": "release-standalone",
+    "buildResources": "build"
+  },
+  "files": [
+    "electron/main.mjs",
+    "electron/main-standalone.mjs",
+    "electron/static-server.mjs",
+    "electron/preferred-port.mjs",
+    "dist-standalone/**/*",
+    "package.json"
+  ],
+  "asar": true,
+  "asarUnpack": [
+    "dist-standalone/**/*"
+  ],
+  "win": {
+    "target": "nsis",
+    "icon": "build/icon.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "避難所レイアウト",
+    "runAfterFinish": true,
+    "license": "build/license_ja.txt",
+    "artifactName": "EvacuationShelterLayout-Standalone-Setup-${version}.${ext}"
+  }
+}

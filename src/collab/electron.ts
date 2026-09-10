@@ -5,7 +5,10 @@
 export type CollabSessionInfo = {
   port: number;
   room: string;
+  /** 参加者に提示できる LAN アドレス（優先順）。VPN・リンクローカルは除外済み。設計書 §9.21。 */
   lanIps: string[];
+  /** 上記に対応するインターフェース名付きの一覧（UI の選択肢ラベル用）。 */
+  lanNetworks?: { address: string; iface: string }[];
   participantUrls: string[];
 };
 
