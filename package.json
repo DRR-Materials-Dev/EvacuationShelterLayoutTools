@@ -1,7 +1,7 @@
 {
   "name": "evacuation-shelter-layout-tools",
   "private": true,
-  "version": "2.5.0",
+  "version": "2.6.0",
   "type": "module",
   "description": "避難所レイアウト検討ツール（マルチ操作対応・ホスト用デスクトップアプリ）",
   "author": "Smart Implement Naoyuki Shiba",

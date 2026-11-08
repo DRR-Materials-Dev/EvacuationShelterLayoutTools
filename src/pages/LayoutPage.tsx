@@ -5,7 +5,7 @@ import Konva from 'konva';
 import AppHeader from '../shared/components/AppHeader.tsx';
 import Canvas from '../tools/layout/Canvas.tsx';
 import ZonePalette from '../tools/layout/ZonePalette.tsx';
-import Toolbar from '../tools/layout/Toolbar.tsx';
+import Toolbar, { type SampleLayout } from '../tools/layout/Toolbar.tsx';
 import StatusBar from '../tools/layout/StatusBar.tsx';
 import ScaleCalibrationModal from '../tools/layout/ScaleCalibrationModal.tsx';
 import AddTextModal from '../tools/layout/AddTextModal.tsx';
@@ -42,7 +42,10 @@ import {
 } from '../shared/layoutIO.ts';
 
 /** public/ に同梱したサンプルレイアウトのファイル名（GitHub Pages で配信される） */
-const SAMPLE_LAYOUT_FILENAME = '避難所レイアウトサンプル.layout.json';
+const SAMPLE_LAYOUTS: SampleLayout[] = [
+  { label: '架空の体育館', filename: '架空の体育館.layout.json' },
+  { label: '架空の公民館', filename: '架空の公民館.layout.json' },
+];
 import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
 
 const LayoutPage = () => {
@@ -93,10 +96,11 @@ const LayoutPage = () => {
       updatePlaced: (id: string, attrs: Partial<PlacedItem>) => collab.updatePlaced(fid, id, attrs),
       setZoneResidents: (id: string, residents: Record<string, number>) =>
         collab.setZoneResidents(fid, id, residents),
-      removePlaced: (id: string) => {
-        collab.removePlaced(fid, id);
-        if (local.selectedId === id) local.setSelectedId(null);
-      },
+      removePlaced: (id: string) => collab.removePlaced(fid, id),
+      updatePlacedMany: (updates: { id: string; attrs: Partial<PlacedItem> }[]) =>
+        collab.updatePlacedMany(fid, updates),
+      addItems: (items: PlacedItem[]) => collab.addItems(fid, items),
+      removePlacedMany: (ids: string[]) => collab.removePlacedMany(fid, ids),
       addPlacedZone: (typeId: string, x: number, y: number) => {
         local.setSelectedId(collab.addPlacedZone(fid, typeId, x, y));
       },
@@ -161,13 +165,30 @@ const LayoutPage = () => {
   }, [useShared, effectiveFloorId, sharedFloors, collab, local]);
   const stageRef = useRef<Konva.Stage | null>(null);
 
+  /* ---------- 存在しなくなった配置物を選択から外す（削除・他ユーザーの操作・階層切替） ---------- */
+  const { selectedIds: curSelectedIds, innerZoneId: curInnerZoneId, setSelection } = local;
+  useEffect(() => {
+    if (curSelectedIds.length === 0) return;
+    const exists = new Set(state.placed.map((p) => p.id));
+    if (curSelectedIds.every((id) => exists.has(id))) return;
+    const inner = curInnerZoneId && exists.has(curInnerZoneId) ? curInnerZoneId : null;
+    setSelection(
+      curSelectedIds.filter((id) => exists.has(id)),
+      inner,
+    );
+  }, [state.placed, curSelectedIds, curInnerZoneId, setSelection]);
+
   /* ---------- マルチ操作：プレゼンス（カーソル・選択） ---------- */
   const { updatePresence } = collab;
   // 自分の表示中の階層・選択を共有
   useEffect(() => {
     if (!useShared) return;
-    updatePresence({ floorId: effectiveFloorId, selectedId: local.selectedId });
-  }, [useShared, effectiveFloorId, local.selectedId, updatePresence]);
+    updatePresence({
+      floorId: effectiveFloorId,
+      selectedId: local.selectedId ?? local.selectedIds[0] ?? null,
+      selectedIds: local.selectedIds,
+    });
+  }, [useShared, effectiveFloorId, local.selectedId, local.selectedIds, updatePresence]);
   const handleCursorMove = useCallback(
     (meters: Point | null) => updatePresence({ cursor: meters }),
     [updatePresence],
@@ -194,6 +215,20 @@ const LayoutPage = () => {
     name: '',
   });
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  /** レイアウト読込のたびに増やし、Canvas に「図面全体が見えるズーム」へ合わせさせる。 */
+  const [fitRequest, setFitRequest] = useState(0);
+
+  /*
+   * マルチ操作の参加者：最初に図面（背景画像）を受け取ったとき、1 回だけ図面全体が見えるズームに合わせる。
+   * 参加直後に図面が無くても、後からホストが図面を読み込んだ時点で 1 回だけ合わせる。
+   */
+  const participantFittedRef = useRef(false);
+  const hasSharedBackground = Boolean(sharedActiveFloor?.background);
+  useEffect(() => {
+    if (!useShared || collab.isHost || participantFittedRef.current || !hasSharedBackground) return;
+    participantFittedRef.current = true;
+    setFitRequest((n) => n + 1);
+  }, [useShared, collab.isHost, hasSharedBackground]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [presenceSettingsOpen, setPresenceSettingsOpen] = useState(false);
   const isElectronHost = getElectronAPI() !== null;
@@ -388,8 +423,8 @@ const LayoutPage = () => {
 
   /* ---------- 選択削除 ---------- */
   const handleRemoveSelected = useCallback(() => {
-    if (state.selectedId) actions.removePlaced(state.selectedId);
-  }, [actions, state.selectedId]);
+    actions.removePlacedMany(state.selectedIds);
+  }, [actions, state.selectedIds]);
 
   /* ---------- 全削除 ---------- */
   const handleClearAllConfirm = useCallback(() => {
@@ -459,6 +494,7 @@ const LayoutPage = () => {
       try {
         const layout = await readLayoutFile(file);
         actions.loadLayout(layout);
+        setFitRequest((n) => n + 1);
         setStatusMessage('レイアウトを読み込みました');
       } catch (e) {
         const msg = e instanceof LayoutParseError ? e.message : 'レイアウトの読み込みに失敗しました';
@@ -469,15 +505,16 @@ const LayoutPage = () => {
   );
 
   /* ---------- サンプルレイアウト読み込み（ファイル選択不要） ---------- */
-  const handleLoadSample = useCallback(async () => {
+  const handleLoadSample = useCallback(async (sample: SampleLayout) => {
     try {
-      const url = `${import.meta.env.BASE_URL}${encodeURIComponent(SAMPLE_LAYOUT_FILENAME)}`;
+      const url = `${import.meta.env.BASE_URL}${encodeURIComponent(sample.filename)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
       const layout = parseLayout(text);
       actions.loadLayout(layout);
-      setStatusMessage('サンプルレイアウトを読み込みました');
+      setFitRequest((n) => n + 1);
+      setStatusMessage(`サンプル「${sample.label}」を読み込みました`);
     } catch (e) {
       const msg = e instanceof LayoutParseError ? e.message : 'サンプルの読み込みに失敗しました';
       setStatusMessage(msg);
@@ -568,7 +605,7 @@ const LayoutPage = () => {
         isAddingText={state.isAddingText}
         isAddingPolygon={state.isAddingPolygon}
         showZones={state.showZones}
-        hasSelection={state.selectedId !== null}
+        hasSelection={state.selectedIds.length > 0}
         canLoad={canLoad}
         onLoadBackgroundImage={handleLoadBackground}
         onToggleScaleMode={handleToggleScaleMode}
@@ -582,7 +619,8 @@ const LayoutPage = () => {
         onClearAll={() => setClearAllConfirm(true)}
         onSaveLayout={handleOpenSaveLayout}
         onLoadLayoutFile={(f) => void handleLoadLayoutFile(f)}
-        onLoadSample={() => void handleLoadSample()}
+        samples={SAMPLE_LAYOUTS}
+        onLoadSample={(s) => void handleLoadSample(s)}
         onOpenSettings={() => setSettingsOpen(true)}
         onDownloadPng={handleDownloadPng}
       />
@@ -612,6 +650,8 @@ const LayoutPage = () => {
           stageRef={stageRef}
           remotePresence={remotePresence}
           onCursorMove={useShared ? handleCursorMove : undefined}
+          onStatusMessage={setStatusMessage}
+          fitRequest={fitRequest}
         />
         {selectedZone && selectedZone.kind === 'zone' && (
           <SelectionPanel

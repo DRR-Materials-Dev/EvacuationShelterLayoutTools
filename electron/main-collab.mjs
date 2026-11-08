@@ -64,13 +64,16 @@ const createWindow = async () => {
   const win = new BrowserWindow({
     width: 1366,
     height: 900,
-    title: '避難所レイアウト（コラボ）',
+    title: `避難所レイアウト（コラボ）  Ver. ${app.getVersion()}`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  // ページの <title> でウィンドウタイトルが上書きされないようにする（バージョン表示を残すため）
+  win.on('page-title-updated', (e) => e.preventDefault());
 
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([

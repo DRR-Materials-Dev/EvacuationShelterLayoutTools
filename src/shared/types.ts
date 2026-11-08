@@ -164,12 +164,21 @@ export type UserSettings = {
     enabled: boolean;
     sizeMeters: number; // 例: 0.1 = 10cm
   };
+  /** 回転の角度スナップ（区画・テキストの回転ハンドル）。Ctrl を押しながら回転すると ON/OFF を反転する。 */
+  rotationSnap: {
+    enabled: boolean;
+    degrees: number; // 例: 15 = 15° 刻み
+  };
 };
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   snap: {
     enabled: true,
     sizeMeters: 0.1,
+  },
+  rotationSnap: {
+    enabled: true,
+    degrees: 15,
   },
 };
 

@@ -18,7 +18,13 @@ import { getElectronAPI, type CollabSessionInfo } from './electron.ts';
 const networkOptions = (info: CollabSessionInfo) =>
   info.lanIps.map((address) => {
     const iface = info.lanNetworks?.find((n) => n.address === address)?.iface;
-    return { value: address, label: iface ? `${address}（${iface}）` : address };
+    if (!iface) return { value: address, label: address };
+    // WSL などの仮想ネットワークは参加者から届かないことが多いので明示する（v2.6.0）
+    const virtual = /vEthernet|WSL|Hyper-V|Docker|VirtualBox|VMware|VMnet/i.test(iface);
+    return {
+      value: address,
+      label: virtual ? `${address}（${iface}・仮想ネットワーク）` : `${address}（${iface}）`,
+    };
   });
 
 const SessionInfoModal = ({ onClose }: { onClose: () => void }) => {

@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Button, Group, Tooltip } from '@mantine/core';
+import { Button, Group, Menu, Tooltip } from '@mantine/core';
 
 // メニュー画面のツールアイコン色に合わせたボタン背景色
 const LAYOUT_BTN_BG = '#C3FAE8'; // 区画エディタのアイコン色（teal.1）
@@ -23,7 +23,11 @@ import {
   IconEye,
   IconEyeOff,
   IconStar,
+  IconChevronDown,
 } from '@tabler/icons-react';
+
+/** サンプルレイアウト（public/ に置いたファイル）。 */
+export type SampleLayout = { label: string; filename: string };
 
 type Props = {
   isScaleMode: boolean;
@@ -45,7 +49,9 @@ type Props = {
   onClearAll: () => void;
   onSaveLayout: () => void;
   onLoadLayoutFile: (file: File) => void;
-  onLoadSample: () => void;
+  /** 選べるサンプルレイアウト。 */
+  samples: SampleLayout[];
+  onLoadSample: (sample: SampleLayout) => void;
   onOpenSettings: () => void;
   onDownloadPng: () => void;
 };
@@ -69,6 +75,7 @@ const Toolbar = ({
   onClearAll,
   onSaveLayout,
   onLoadLayoutFile,
+  samples,
   onLoadSample,
   onOpenSettings,
   onDownloadPng,
@@ -213,17 +220,28 @@ const Toolbar = ({
       </Tooltip>
 
       <Group gap={4} ml="auto" wrap="nowrap" style={NO_SHRINK}>
-        <Tooltip label={canLoad ? 'サンプルのレイアウトを読み込む（ファイル選択不要）' : '参加者は読み込みはできません（ホストのみ）'}>
-          <Button
-            variant="default"
-            leftSection={<IconStar size={16} />}
-            onClick={onLoadSample}
-            disabled={!canLoad}
-            style={NO_SHRINK}
-          >
-            サンプル読込
-          </Button>
-        </Tooltip>
+        <Menu position="bottom-end" withinPortal shadow="md" disabled={!canLoad}>
+          <Menu.Target>
+            <Tooltip label={canLoad ? 'サンプルのレイアウトを選んで読み込む（ファイル選択不要）' : '参加者は読み込みはできません（ホストのみ）'}>
+              <Button
+                variant="default"
+                leftSection={<IconStar size={16} />}
+                rightSection={<IconChevronDown size={14} />}
+                disabled={!canLoad}
+                style={NO_SHRINK}
+              >
+                サンプル読込
+              </Button>
+            </Tooltip>
+          </Menu.Target>
+          <Menu.Dropdown>
+            {samples.map((s) => (
+              <Menu.Item key={s.filename} onClick={() => onLoadSample(s)}>
+                {s.label}
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
 
         <Tooltip label={canLoad ? 'レイアウト (.layout.json) を読み込む' : '参加者は読み込みはできません（ホストのみ）'}>
           <Button

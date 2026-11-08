@@ -78,6 +78,9 @@ export type CollabLayer = {
   ) => string;
   addPolygon: (floorId: string, points: Point[]) => string | null;
   removePlaced: (floorId: string, id: string) => void;
+  updatePlacedMany: (floorId: string, updates: { id: string; attrs: Partial<PlacedItem> }[]) => void;
+  addItems: (floorId: string, items: PlacedItem[]) => void;
+  removePlacedMany: (floorId: string, ids: string[]) => void;
   /* 階層レベル操作 */
   setBackground: (floorId: string, bg: StoredBackground | null) => void;
   setScaleRatio: (floorId: string, r: number) => void;
@@ -220,6 +223,21 @@ export const useCollabLayer = (seed: CollabSnapshot): CollabLayer => {
     sessionRef.current?.removeItem(floorId, id);
   }, []);
 
+  const updatePlacedMany = useCallback(
+    (floorId: string, updates: { id: string; attrs: Partial<PlacedItem> }[]) => {
+      sessionRef.current?.updatePlacedMany(floorId, updates);
+    },
+    [],
+  );
+
+  const addItems = useCallback((floorId: string, items: PlacedItem[]) => {
+    sessionRef.current?.addItems(floorId, items);
+  }, []);
+
+  const removePlacedMany = useCallback((floorId: string, ids: string[]) => {
+    sessionRef.current?.removeItems(floorId, ids);
+  }, []);
+
   const setBackground = useCallback((floorId: string, bg: StoredBackground | null) => {
     sessionRef.current?.setBackground(floorId, bg);
   }, []);
@@ -300,6 +318,9 @@ export const useCollabLayer = (seed: CollabSnapshot): CollabLayer => {
     addText,
     addPolygon,
     removePlaced,
+    updatePlacedMany,
+    addItems,
+    removePlacedMany,
     setBackground,
     setScaleRatio,
     renameFloor,

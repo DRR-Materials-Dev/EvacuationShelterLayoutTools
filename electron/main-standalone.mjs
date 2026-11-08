@@ -41,13 +41,16 @@ const createWindow = async () => {
   const win = new BrowserWindow({
     width: 1366,
     height: 900,
-    title: '避難所レイアウト',
+    title: `避難所レイアウト  Ver. ${app.getVersion()}`,
     webPreferences: {
       // 単体動作版は preload で公開する API を持たない（コラボのセッション情報が不要なため）。
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  // ページの <title> でウィンドウタイトルが上書きされないようにする（バージョン表示を残すため）
+  win.on('page-title-updated', (e) => e.preventDefault());
 
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([

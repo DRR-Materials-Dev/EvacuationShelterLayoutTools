@@ -48,7 +48,18 @@ export const getStoredUserSettings = (): UserSettings => {
     if (!isObject(parsed)) return DEFAULT_USER_SETTINGS;
 
     const snapRaw = isObject(parsed.snap) ? parsed.snap : {};
+    const rotRaw = isObject(parsed.rotationSnap) ? parsed.rotationSnap : {};
     return {
+      rotationSnap: {
+        enabled:
+          typeof rotRaw.enabled === 'boolean'
+            ? rotRaw.enabled
+            : DEFAULT_USER_SETTINGS.rotationSnap.enabled,
+        degrees:
+          typeof rotRaw.degrees === 'number' && rotRaw.degrees > 0 && rotRaw.degrees <= 180
+            ? rotRaw.degrees
+            : DEFAULT_USER_SETTINGS.rotationSnap.degrees,
+      },
       snap: {
         enabled:
           typeof snapRaw.enabled === 'boolean'
