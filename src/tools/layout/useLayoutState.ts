@@ -27,6 +27,8 @@ import {
 } from '../../shared/storage.ts';
 import type { Point } from './types.ts';
 
+const EMPTY_SELECTION: { ids: string[]; innerZoneId: string | null } = { ids: [], innerZoneId: null };
+
 const genId = (prefix: string): string =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -54,7 +56,15 @@ export type LayoutState = {
   /* ---- ビュー / UI 状態 ---- */
   viewScale: number;
   stagePos: Point;
+  /**
+   * 代表の選択 ID。1 件選択中はその ID、ゾーン内選択中はゾーンの ID、複数選択中・未選択は null。
+   * 人数パネル・ゾーンパネル等「単体選択」を前提とする UI はこれを見る。
+   */
   selectedId: string | null;
+  /** 選択中の配置物 ID 全件（ゾーン内選択中はゾーン自身＋内部の区画）。 */
+  selectedIds: string[];
+  /** ゾーン内選択中のゾーン ID。ゾーン内選択でなければ null。 */
+  innerZoneId: string | null;
   isScaleMode: boolean;
   scalePoints: Point[]; // world-px coords for scale calibration markers
   isAddingText: boolean; // テキスト配置モード（ボタン → クリックで配置）
@@ -67,7 +77,10 @@ export type LayoutActions = {
   setScaleRatio: (r: number) => void;
   setViewScale: (s: number) => void;
   setStagePos: (p: Point) => void;
+  /** 単体選択にする（null で選択解除）。 */
   setSelectedId: (id: string | null) => void;
+  /** 選択を丸ごと設定する。innerZoneId を渡すとゾーン内選択になる（ids にゾーン自身も含める）。 */
+  setSelection: (ids: string[], innerZoneId?: string | null) => void;
   setIsScaleMode: (m: boolean) => void;
   setScalePoints: (p: Point[]) => void;
   setIsAddingText: (v: boolean) => void;
@@ -85,11 +98,17 @@ export type LayoutActions = {
   addPlacedZone: (typeId: string, xMeters: number, yMeters: number) => void;
   addText: (xMeters: number, yMeters: number, text: string, fontSize: number, color: string) => void;
   updatePlaced: (id: string, attrs: Partial<PlacedItem>) => void;
+  /** 複数配置物をまとめて更新する（一括移動）。 */
+  updatePlacedMany: (updates: { id: string; attrs: Partial<PlacedItem> }[]) => void;
+  /** 配置物をまとめて追加する（貼り付け）。選択は呼び出し側で設定する。 */
+  addItems: (items: PlacedItem[]) => void;
   /** 居住者種類定義を置き換える（編集モーダルからの保存）。削除された種類の人数も全階層の区画から除去する。 */
   setResidentTypes: (types: ResidentType[]) => void;
   /** 指定した配置済み区画の居住者人数を設定する。 */
   setZoneResidents: (id: string, residents: Record<string, number>) => void;
   removePlaced: (id: string) => void;
+  /** 複数配置物をまとめて削除する。 */
+  removePlacedMany: (ids: string[]) => void;
   clearPlaced: () => void;
   clearAll: () => void;
   replaceZoneList: (list: ZoneList) => void;
@@ -115,7 +134,33 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
 
   const [viewScale, setViewScale] = useState<number>(1);
   const [stagePos, setStagePos] = useState<Point>({ x: 0, y: 0 });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selection, setSelectionState] = useState<{ ids: string[]; innerZoneId: string | null }>({
+    ids: [],
+    innerZoneId: null,
+  });
+  const selectedIds = selection.ids;
+  const innerZoneId = selection.innerZoneId;
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : innerZoneId;
+
+  const setSelectedId = useCallback((id: string | null) => {
+    setSelectionState({ ids: id ? [id] : [], innerZoneId: null });
+  }, []);
+
+  const setSelection = useCallback((ids: string[], inner: string | null = null) => {
+    setSelectionState({ ids: [...new Set(ids)], innerZoneId: inner });
+  }, []);
+
+  /** 指定 ID を選択から外す（削除時）。ゾーン内選択のゾーンが消えたら通常の選択に戻す。 */
+  const dropFromSelection = useCallback((ids: string[]) => {
+    const drop = new Set(ids);
+    setSelectionState((cur) => {
+      if (!cur.ids.some((id) => drop.has(id))) return cur;
+      return {
+        ids: cur.ids.filter((id) => !drop.has(id)),
+        innerZoneId: cur.innerZoneId && drop.has(cur.innerZoneId) ? null : cur.innerZoneId,
+      };
+    });
+  }, []);
   const [isScaleMode, setIsScaleMode] = useState<boolean>(false);
   const [scalePoints, setScalePoints] = useState<Point[]>([]);
   const [isAddingText, setIsAddingText] = useState<boolean>(false);
@@ -208,7 +253,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
       mutatePlaced((prev) => [...prev, newZone]);
       setSelectedId(newZone.id);
     },
-    [mutatePlaced],
+    [mutatePlaced, setSelectedId],
   );
 
   const addText = useCallback(
@@ -228,7 +273,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
       mutatePlaced((prev) => [...prev, newText]);
       setSelectedId(newText.id);
     },
-    [mutatePlaced],
+    [mutatePlaced, setSelectedId],
   );
 
   const addPolygon = useCallback(
@@ -243,7 +288,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
       mutatePlaced((prev) => [...prev, newPolygon]);
       setSelectedId(newPolygon.id);
     },
-    [mutatePlaced],
+    [mutatePlaced, setSelectedId],
   );
 
   const updatePlaced = useCallback(
@@ -251,6 +296,28 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
       mutatePlaced((prev) =>
         prev.map((p) => (p.id === id ? ({ ...p, ...attrs } as PlacedItem) : p)),
       );
+    },
+    [mutatePlaced],
+  );
+
+  const updatePlacedMany = useCallback(
+    (updates: { id: string; attrs: Partial<PlacedItem> }[]) => {
+      if (updates.length === 0) return;
+      const byId = new Map(updates.map((u) => [u.id, u.attrs]));
+      mutatePlaced((prev) =>
+        prev.map((p) => {
+          const attrs = byId.get(p.id);
+          return attrs ? ({ ...p, ...attrs } as PlacedItem) : p;
+        }),
+      );
+    },
+    [mutatePlaced],
+  );
+
+  const addItems = useCallback(
+    (items: PlacedItem[]) => {
+      if (items.length === 0) return;
+      mutatePlaced((prev) => [...prev, ...items]);
     },
     [mutatePlaced],
   );
@@ -302,20 +369,30 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
   const removePlaced = useCallback(
     (id: string) => {
       mutatePlaced((prev) => prev.filter((p) => p.id !== id));
-      setSelectedId((cur) => (cur === id ? null : cur));
+      dropFromSelection([id]);
     },
-    [mutatePlaced],
+    [mutatePlaced, dropFromSelection],
+  );
+
+  const removePlacedMany = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      const drop = new Set(ids);
+      mutatePlaced((prev) => prev.filter((p) => !drop.has(p.id)));
+      dropFromSelection(ids);
+    },
+    [mutatePlaced, dropFromSelection],
   );
 
   const clearPlaced = useCallback(() => {
     mutatePlaced(() => []);
-    setSelectedId(null);
+    setSelectionState(EMPTY_SELECTION);
   }, [mutatePlaced]);
 
   const clearAll = useCallback(() => {
     // アクティブ階層の配置物と背景をクリアする
     mutateActiveFloor((f) => ({ ...f, placed: [], background: undefined }));
-    setSelectedId(null);
+    setSelectionState(EMPTY_SELECTION);
   }, [mutateActiveFloor]);
 
   /* ---------- 階層操作 ---------- */
@@ -326,7 +403,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
       setActiveFloorId(newFloor.id);
       return [...prev, newFloor];
     });
-    setSelectedId(null);
+    setSelectionState(EMPTY_SELECTION);
   }, []);
 
   const removeFloor = useCallback((id: string) => {
@@ -336,7 +413,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
       setActiveFloorId((cur) => (cur === id ? next[0].id : cur));
       return next;
     });
-    setSelectedId(null);
+    setSelectionState(EMPTY_SELECTION);
   }, []);
 
   const renameFloor = useCallback((id: string, name: string) => {
@@ -345,7 +422,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
 
   const setActiveFloor = useCallback((id: string) => {
     setActiveFloorId(id);
-    setSelectedId(null);
+    setSelectionState(EMPTY_SELECTION);
   }, []);
 
   const moveFloor = useCallback((id: string, dir: -1 | 1) => {
@@ -368,7 +445,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     void setStoredZoneList(list);
     // 区画タイプが変わるため全階層の配置物をクリア
     setFloors((prev) => prev.map((f) => ({ ...f, placed: [] })));
-    setSelectedId(null);
+    setSelectionState(EMPTY_SELECTION);
   }, []);
 
   const resetZoneListToDefault = useCallback(() => {
@@ -377,7 +454,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     setZoneListDirty(false);
     void clearStoredZoneList();
     setFloors((prev) => prev.map((f) => ({ ...f, placed: [] })));
-    setSelectedId(null);
+    setSelectionState(EMPTY_SELECTION);
   }, []);
 
   // モーダル区画エディタの編集を適用（パレット反映）。配置物はクリアしない。
@@ -410,7 +487,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     const loadedFloors = layout.floors.length > 0 ? layout.floors : [createDefaultFloor()];
     setFloors(loadedFloors);
     setActiveFloorId(loadedFloors[0].id);
-    setSelectedId(null);
+    setSelectionState(EMPTY_SELECTION);
     setViewScale(1);
     setStagePos({ x: 0, y: 0 });
     // 旧 IndexedDB の単一背景キーは使わないため掃除
@@ -441,6 +518,8 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     viewScale,
     stagePos,
     selectedId,
+    selectedIds,
+    innerZoneId,
     isScaleMode,
     scalePoints,
     isAddingText,
@@ -451,6 +530,7 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     setViewScale,
     setStagePos,
     setSelectedId,
+    setSelection,
     setIsScaleMode,
     setScalePoints,
     setIsAddingText,
@@ -465,9 +545,12 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     addPlacedZone,
     addText,
     updatePlaced,
+    updatePlacedMany,
+    addItems,
     setResidentTypes,
     setZoneResidents,
     removePlaced,
+    removePlacedMany,
     clearPlaced,
     clearAll,
     replaceZoneList,

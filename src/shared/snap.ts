@@ -21,6 +21,30 @@ const cleanupFloat = (v: number): number => {
 };
 
 /**
+ * Ctrl キーを押しているとき用に、位置スナップの ON/OFF を反転した設定を返す。
+ * invert が false ならそのまま返す。
+ */
+export const withSnapInverted = (settings: UserSettings, invert: boolean): UserSettings =>
+  invert ? { ...settings, snap: { ...settings.snap, enabled: !settings.snap.enabled } } : settings;
+
+/**
+ * Konva Transformer に渡す回転スナップ角の一覧と許容差を返す。
+ * 許容差を刻みの半分にすることで、常にいちばん近い刻みへ吸着させる。
+ * invert（Ctrl 押下）なら角度スナップの ON/OFF を反転する。スナップしない場合は空配列。
+ */
+export const rotationSnapConfig = (
+  settings: UserSettings,
+  invert: boolean,
+): { snaps: number[]; tolerance: number } => {
+  const { enabled, degrees } = settings.rotationSnap;
+  const on = invert ? !enabled : enabled;
+  if (!on || !(degrees > 0)) return { snaps: [], tolerance: 0 };
+  const snaps: number[] = [];
+  for (let a = 0; a < 360 - 1e-9; a += degrees) snaps.push(cleanupFloat(a));
+  return { snaps, tolerance: degrees / 2 };
+};
+
+/**
  * 2 次元の値（座標または寸法）をスナップする。
  */
 export const snapPoint = (

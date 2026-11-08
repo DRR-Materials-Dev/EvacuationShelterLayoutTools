@@ -208,7 +208,17 @@ const lanPriority = (ip) => {
 };
 
 /**
+ * 仮想ネットワーク（WSL / Hyper-V / Docker / VirtualBox / VMware 等）のインターフェースか。
+ * WSL の vEthernet は 172.x のプライベートアドレスを持つため、アドレスだけでは実 LAN と区別できず、
+ * 招待画面の既定に選ばれて参加者がつながらない事例があった（v2.6.0）。
+ * Hyper-V の外部スイッチ（vEthernet）は実 LAN につながる場合もあるので、除外せず後ろへ回すだけにする。
+ */
+const isVirtualInterface = (iface) =>
+  /vEthernet|WSL|Hyper-V|Docker|VirtualBox|VMware|VMnet|Loopback|Npcap|ZeroTier|Tailscale/i.test(iface);
+
+/**
  * このマシンの LAN 向け IPv4 を、インターフェース名付きで優先順に返す。
+ * 実 LAN（物理の Wi‑Fi / 有線）→ 仮想ネットワーク の順。同じ区分内はアドレスの優先度順。
  * 除外した結果ゼロ件になる場合だけは、選択肢を失わないよう未フィルタの一覧を返す。
  */
 export const getLanInterfaces = () => {
@@ -219,9 +229,8 @@ export const getLanInterfaces = () => {
     }
   }
   const usable = all.filter((i) => isReachableLan(i.address));
-  return (usable.length > 0 ? usable : all).sort(
-    (x, y) => lanPriority(x.address) - lanPriority(y.address),
-  );
+  const rank = (i) => (isVirtualInterface(i.iface) ? 10 : 0) + lanPriority(i.address);
+  return (usable.length > 0 ? usable : all).sort((x, y) => rank(x) - rank(y));
 };
 
 /** このマシンの LAN 向け IPv4 アドレス一覧を優先順に返す。 */

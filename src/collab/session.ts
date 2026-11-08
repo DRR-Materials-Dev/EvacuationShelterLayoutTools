@@ -36,8 +36,10 @@ export type RemotePresence = {
   floorId?: string;
   /** カーソル位置（メートル）。null/未定義は非表示。 */
   cursor?: { x: number; y: number } | null;
-  /** 選択中の配置物 ID。 */
+  /** 選択中の配置物 ID（代表 1 件。旧バージョンとの互換用）。 */
   selectedId?: string | null;
+  /** 選択中の配置物 ID 全件（複数選択・ゾーン内選択）。未定義なら selectedId のみ。 */
+  selectedIds?: string[];
 };
 
 /** 自分のプレゼンスとして更新できる部分。 */
@@ -45,6 +47,7 @@ export type LocalPresence = {
   floorId?: string;
   cursor?: { x: number; y: number } | null;
   selectedId?: string | null;
+  selectedIds?: string[];
 };
 
 /** 自分の表示名・色は端末に保存し、再参加・再読込でも引き継ぐ。 */
@@ -81,6 +84,12 @@ export type CollabSession = {
   updatePlaced: (floorId: string, id: string, attrs: Partial<PlacedItem>) => void;
   addItem: (floorId: string, item: PlacedItem) => void;
   removeItem: (floorId: string, id: string) => void;
+  /** 複数配置物の更新を 1 トランザクションで行う（複数選択の一括移動など）。 */
+  updatePlacedMany: (floorId: string, updates: { id: string; attrs: Partial<PlacedItem> }[]) => void;
+  /** 複数配置物の追加を 1 トランザクションで行う（貼り付け）。 */
+  addItems: (floorId: string, items: PlacedItem[]) => void;
+  /** 複数配置物の削除を 1 トランザクションで行う。 */
+  removeItems: (floorId: string, ids: string[]) => void;
   /* ---- 階層レベル操作 ---- */
   setBackground: (floorId: string, bg: Floor['background'] | null) => void;
   setScaleRatio: (floorId: string, r: number) => void;
@@ -210,16 +219,43 @@ export const createSession = (): CollabSession => {
   };
 
   const updatePlaced = (floorId: string, id: string, attrs: Partial<PlacedItem>): void => {
+    updatePlacedMany(floorId, [{ id, attrs }]);
+  };
+
+  const updatePlacedMany = (
+    floorId: string,
+    updates: { id: string; attrs: Partial<PlacedItem> }[],
+  ): void => {
     const arr = floorPlaced(floorId);
-    if (!arr) return;
-    const items = arr.toArray();
-    const idx = items.findIndex((m) => m.get('id') === id);
-    if (idx < 0) return;
-    const m = items[idx];
+    if (!arr || updates.length === 0) return;
+    const byId = new Map(arr.toArray().map((m) => [m.get('id') as string, m]));
     doc.transact(() => {
-      for (const [k, v] of Object.entries(attrs)) {
-        if (v === undefined) m.delete(k);
-        else m.set(k, v);
+      for (const { id, attrs } of updates) {
+        const m = byId.get(id);
+        if (!m) continue; // 他ユーザーが削除済み
+        for (const [k, v] of Object.entries(attrs)) {
+          if (v === undefined) m.delete(k);
+          else m.set(k, v);
+        }
+      }
+    });
+  };
+
+  const addItems = (floorId: string, items: PlacedItem[]): void => {
+    const arr = floorPlaced(floorId);
+    if (!arr || items.length === 0) return;
+    doc.transact(() => arr.push(items.map(itemToYMap)));
+  };
+
+  const removeItems = (floorId: string, ids: string[]): void => {
+    const arr = floorPlaced(floorId);
+    if (!arr || ids.length === 0) return;
+    const target = new Set(ids);
+    doc.transact(() => {
+      // 後ろから消してインデックスずれを避ける
+      const list = arr.toArray();
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (target.has(list[i].get('id') as string)) arr.delete(i, 1);
       }
     });
   };
@@ -384,6 +420,7 @@ export const createSession = (): CollabSession => {
           floorId: st.floorId as string | undefined,
           cursor: st.cursor as { x: number; y: number } | null | undefined,
           selectedId: st.selectedId as string | null | undefined,
+          selectedIds: Array.isArray(st.selectedIds) ? (st.selectedIds as string[]) : undefined,
         });
       });
       cb(others);
@@ -406,6 +443,9 @@ export const createSession = (): CollabSession => {
     updatePlaced,
     addItem,
     removeItem,
+    updatePlacedMany,
+    addItems,
+    removeItems,
     setBackground,
     setScaleRatio,
     renameFloor,

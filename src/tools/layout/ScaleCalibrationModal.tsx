@@ -16,7 +16,7 @@ type Props = {
  * 初期値は useState の初期化で一度だけ設定される。
  */
 const ScaleCalibrationModal = ({ opened, distancePx, onCancel, onSubmit }: Props) => {
-  const [value, setValue] = useState<number | string>(2);
+  const [value, setValue] = useState<number | string>(50);
   const [unit, setUnit] = useState<Unit>('m');
 
   const handleSubmit = () => {
