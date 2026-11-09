@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { persistPresetAsShared, type ZoneListPresetId } from '../../shared/zoneListPresets.ts';
 import {
   DEFAULT_POLYGON_STYLE,
   DEFAULT_RESIDENT_TYPES,
@@ -17,7 +18,6 @@ import type {
 } from '../../shared/types.ts';
 import {
   clearStoredBackground,
-  clearStoredZoneList,
   getStoredLayoutState,
   getStoredZoneList,
   migrateLegacyLayoutState,
@@ -113,7 +113,8 @@ export type LayoutActions = {
   clearAll: () => void;
   replaceZoneList: (list: ZoneList) => void;
   /** 区画リストをデフォルトに戻す（全階層の配置済みもクリア、共有 IndexedDB もクリア） */
-  resetZoneListToDefault: () => void;
+  /** 区画リストを既定（プリセット）に戻す。省略時は標準区画リスト。 */
+  resetZoneListToDefault: (list?: ZoneList, presetId?: ZoneListPresetId) => void;
   /** モーダル区画エディタの編集をレイアウトへ適用（パレット反映）。共有には未保存（dirty）にする。設計書 §8.2。 */
   applyZoneListEdits: (list: ZoneList) => void;
   /** モーダル区画エディタの編集をレイアウトへ適用し、共有区画リストへ保存（dirty 解除）。 */
@@ -448,14 +449,17 @@ export const useLayoutState = (): LayoutState & LayoutActions => {
     setSelectionState(EMPTY_SELECTION);
   }, []);
 
-  const resetZoneListToDefault = useCallback(() => {
-    setZoneListState(DEFAULT_ZONE_LIST);
-    setZoneListName(DEFAULT_ZONE_LIST.name);
+  const resetZoneListToDefault = useCallback(
+    (list: ZoneList = DEFAULT_ZONE_LIST, presetId: ZoneListPresetId = 'standard') => {
+    setZoneListState(list);
+    setZoneListName(list.name);
     setZoneListDirty(false);
-    void clearStoredZoneList();
+    void persistPresetAsShared(presetId, list);
     setFloors((prev) => prev.map((f) => ({ ...f, placed: [] })));
     setSelectionState(EMPTY_SELECTION);
-  }, []);
+  },
+    [],
+  );
 
   // モーダル区画エディタの編集を適用（パレット反映）。配置物はクリアしない。
   const applyZoneListEdits = useCallback((list: ZoneList) => {

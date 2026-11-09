@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Group,
   Button,
@@ -28,9 +28,20 @@ type Props = {
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
   onMove: (id: string, dir: -1 | 1) => void;
+  /** 帯の右側に置く要素（タッチ向けの編集操作など）。 */
+  rightSection?: ReactNode;
 };
 
-const FloorTabs = ({ floors, activeFloorId, onSelect, onAdd, onRename, onRemove, onMove }: Props) => {
+const FloorTabs = ({
+  floors,
+  activeFloorId,
+  onSelect,
+  onAdd,
+  onRename,
+  onRemove,
+  onMove,
+  rightSection,
+}: Props) => {
   const [renameTarget, setRenameTarget] = useState<Floor | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [removeTarget, setRemoveTarget] = useState<Floor | null>(null);
@@ -119,6 +130,8 @@ const FloorTabs = ({ floors, activeFloorId, onSelect, onAdd, onRename, onRemove,
           <IconPlus size={16} />
         </ActionIcon>
       </Tooltip>
+
+      {rightSection}
 
       {/* 名前変更モーダル */}
       <Modal opened={renameTarget !== null} onClose={() => setRenameTarget(null)} title="階層名の変更" centered>

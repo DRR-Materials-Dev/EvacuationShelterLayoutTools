@@ -12,9 +12,11 @@ import {
   ColorSwatch,
   ActionIcon,
   Tooltip,
+  Button,
 } from '@mantine/core';
-import { IconX } from '@tabler/icons-react';
+import { IconEye, IconEyeOff, IconTrash, IconX } from '@tabler/icons-react';
 import type { PolygonZone, ResidentType } from '../../shared/types.ts';
+import { DEFAULT_POLYGON_LABEL_FONT_PX } from '../../shared/constants.ts';
 
 type Props = {
   polygon: PolygonZone;
@@ -22,6 +24,17 @@ type Props = {
   byType: Record<string, number>;
   total: number;
   onChange: (attrs: Partial<PolygonZone>) => void;
+  /** ゾーン内に完全に収まる区画の数。 */
+  innerZoneCount: number;
+  /** ゾーン内の区画の区画名表示を一括設定する（v2.7.0）。undefined は区画リストの設定に戻す。 */
+  onInnerZonesShowName: (show: boolean | undefined) => void;
+  /** ゾーンのドラッグで中の区画を動かさない（Alt キーの代わり。タブレット向け）。 */
+  moveAlone: boolean;
+  onMoveAloneChange: (v: boolean) => void;
+  /** 選択中のもの（ゾーン、ゾーン内選択なら中の区画も）を削除する。 */
+  onDelete: () => void;
+  /** ゾーン内選択中か（削除ボタンの表記用）。 */
+  innerSelection: boolean;
   onClose: () => void;
 };
 
@@ -29,7 +42,20 @@ type Props = {
  * ゾーン（多角形）を選択したときの右側パネル。
  * 枠線・塗りの設定と、内包される区画の居住者カウントを表示する（設計書 §8.1.3/§8.1.4）。
  */
-const PolygonPanel = ({ polygon, residentTypes, byType, total, onChange, onClose }: Props) => {
+const PolygonPanel = ({
+  polygon,
+  residentTypes,
+  byType,
+  total,
+  onChange,
+  innerZoneCount,
+  onInnerZonesShowName,
+  moveAlone,
+  onMoveAloneChange,
+  onDelete,
+  innerSelection,
+  onClose,
+}: Props) => {
   return (
     <Stack
       gap="xs"
@@ -58,6 +84,74 @@ const PolygonPanel = ({ polygon, residentTypes, byType, total, onChange, onClose
         onChange={(e) => onChange({ label: e.currentTarget.value })}
         placeholder="例: 居住エリアA"
       />
+      <Switch
+        label="ラベルを図面に表示"
+        checked={polygon.showLabel === true}
+        onChange={(e) => onChange({ showLabel: e.currentTarget.checked })}
+      />
+      {polygon.showLabel === true && (
+        <Group gap="xs" wrap="nowrap" align="flex-end">
+          <NumberInput
+            label="文字サイズ (px)"
+            value={polygon.labelFontSize ?? DEFAULT_POLYGON_LABEL_FONT_PX}
+            onChange={(v) =>
+              onChange({ labelFontSize: typeof v === 'number' && v > 0 ? v : DEFAULT_POLYGON_LABEL_FONT_PX })
+            }
+            min={6}
+            max={200}
+            step={2}
+            allowDecimal={false}
+            style={{ flex: 1 }}
+          />
+          <ColorInput
+            label="文字色"
+            value={polygon.labelColor ?? '#000000'}
+            onChange={(c) => onChange({ labelColor: c })}
+            format="hex"
+            style={{ flex: 1 }}
+          />
+        </Group>
+      )}
+
+      <Switch
+        label="ゾーンだけ移動（中の区画は動かさない）"
+        description="Alt を押しながらドラッグするのと同じです"
+        checked={moveAlone}
+        onChange={(e) => onMoveAloneChange(e.currentTarget.checked)}
+      />
+
+      <Text size="sm">ゾーン内の区画名（{innerZoneCount} 区画）</Text>
+      <Group gap={6} grow>
+        <Button
+          size="xs"
+          variant="light"
+          leftSection={<IconEye size={14} />}
+          onClick={() => onInnerZonesShowName(true)}
+          disabled={innerZoneCount === 0}
+        >
+          表示
+        </Button>
+        <Button
+          size="xs"
+          variant="light"
+          color="gray"
+          leftSection={<IconEyeOff size={14} />}
+          onClick={() => onInnerZonesShowName(false)}
+          disabled={innerZoneCount === 0}
+        >
+          非表示
+        </Button>
+      </Group>
+      <Button
+        size="compact-xs"
+        style={{ flexShrink: 0 }}
+        variant="subtle"
+        color="gray"
+        onClick={() => onInnerZonesShowName(undefined)}
+        disabled={innerZoneCount === 0}
+      >
+        区画リストの設定に戻す
+      </Button>
 
       <Divider label="枠線" labelPosition="left" />
       <Select
@@ -135,6 +229,19 @@ const PolygonPanel = ({ polygon, residentTypes, byType, total, onChange, onClose
       <Text size="xs" c="dimmed">
         ※ 区画の四隅すべてがゾーン内に収まる区画のみ集計します。
       </Text>
+
+      <Divider />
+      <Button
+        size="xs"
+        variant="light"
+        color="red"
+        leftSection={<IconTrash size={14} />}
+        style={{ flexShrink: 0 }}
+        onClick={onDelete}
+      >
+        {innerSelection ? 'ゾーンと中の区画を削除' : 'このゾーンを削除'}
+      </Button>
+
     </Stack>
   );
 };

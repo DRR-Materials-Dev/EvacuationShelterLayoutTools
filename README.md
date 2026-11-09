@@ -80,6 +80,7 @@
 | use-image | MIT | konva 用画像ローダー |
 | idb-keyval | Apache-2.0 | IndexedDB ラッパー |
 | qrcode | MIT | 参加用 URL の QR コード生成（コラボ版のみ） |
+| pdfjs-dist | Apache-2.0 | PDF 図面の読み込み（ページの画像化） |
 | vite | MIT | ビルドツール |
 | typescript | Apache-2.0 | 型システム |
 | @vitejs/plugin-react | MIT | Vite 用 React プラグイン |

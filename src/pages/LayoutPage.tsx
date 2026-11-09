@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { useBlocker } from 'react-router-dom';
 import { Modal, Button, Group, Text, Stack, TextInput } from '@mantine/core';
 import Konva from 'konva';
@@ -13,8 +22,19 @@ import EditTextModal from '../tools/layout/EditTextModal.tsx';
 import ResidentTypesModal from '../tools/layout/ResidentTypesModal.tsx';
 import SelectionPanel from '../tools/layout/SelectionPanel.tsx';
 import PolygonPanel from '../tools/layout/PolygonPanel.tsx';
+import MultiZonePanel from '../tools/layout/MultiZonePanel.tsx';
+import EditActionsBar from '../tools/layout/EditActionsBar.tsx';
+import {
+  copySelection,
+  hasClipboard,
+  pasteSelection,
+  subscribeClipboard,
+} from '../tools/layout/clipboard.ts';
+import { useUserSettings } from '../shared/settings.tsx';
 import FloorTabs from '../tools/layout/FloorTabs.tsx';
 import ZoneEditorModal from '../tools/layout/ZoneEditorModal.tsx';
+import PdfImportModal from '../tools/layout/PdfImportModal.tsx';
+import { isPdfFile } from '../tools/layout/pdfRender.ts';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
 import PresenceSettingsModal from '../collab/PresenceSettingsModal.tsx';
 import { useLayoutState } from '../tools/layout/useLayoutState.ts';
@@ -27,12 +47,18 @@ const SessionInfoModal =
   import.meta.env.VITE_COLLAB === 'true'
     ? lazy(() => import('../collab/SessionInfoModal.tsx'))
     : null;
-import { getZoneResidentTotal, sumResidentsByType } from '../shared/types.ts';
+import { getZoneResidentTotal, isPlacedZoneNameShown, sumResidentsByType } from '../shared/types.ts';
 import type { LayoutFile, PlacedItem, PlacedZone, ZoneList } from '../shared/types.ts';
 import type { Point } from '../tools/layout/types.ts';
 import type { StoredBackground } from '../shared/storage.ts';
 import { DEFAULT_ZONE_LIST } from '../shared/constants.ts';
-import { residentsInPolygon } from '../shared/geometry.ts';
+import ZoneListPresetPicker from '../shared/components/ZoneListPresetPicker.tsx';
+import {
+  DEFAULT_PRESET_ID,
+  loadZoneListPreset,
+  type ZoneListPresetId,
+} from '../shared/zoneListPresets.ts';
+import { isZoneFullyInPolygon, residentsInPolygon } from '../shared/geometry.ts';
 import {
   downloadLayout,
   readLayoutFile,
@@ -47,6 +73,10 @@ const SAMPLE_LAYOUTS: SampleLayout[] = [
   { label: '架空の公民館', filename: '架空の公民館.layout.json' },
 ];
 import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
+
+/** ゾーン選択時にステータスバーへ出すヒント。 */
+const ZONE_SELECT_HINT =
+  'ゾーン選択中： Alt を押しながらドラッグ（タブレットは「ゾーンだけ移動」ボタン）でゾーンだけ移動 ／ もう一度クリックでゾーン内選択（中の区画もまとめて選択）';
 
 const LayoutPage = () => {
   const local = useLayoutState();
@@ -128,9 +158,10 @@ const LayoutPage = () => {
         collab.replaceZoneListClearPlaced(list, list.name);
         local.replaceZoneList(list);
       },
-      resetZoneListToDefault: () => {
-        collab.replaceZoneListClearPlaced(DEFAULT_ZONE_LIST, DEFAULT_ZONE_LIST.name);
-        local.resetZoneListToDefault();
+      resetZoneListToDefault: (list?: ZoneList, presetId?: ZoneListPresetId) => {
+        const l = list ?? DEFAULT_ZONE_LIST;
+        collab.replaceZoneListClearPlaced(l, l.name);
+        local.resetZoneListToDefault(l, presetId);
       },
       clearAll: () => {
         collab.clearFloor(fid);
@@ -203,8 +234,17 @@ const LayoutPage = () => {
     distancePx: 0,
   });
   const [pendingZoneListFile, setPendingZoneListFile] = useState<File | null>(null);
+  /** PDF 図面の取り込み中ファイル（v2.7.0）。 */
+  const [pdfFile, setPdfFile] = useState<{ file: File; floorId: string } | null>(null);
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  /** ゾーンのドラッグで中の区画を動かさない（Alt キーの代わり）。 */
+  const [zoneMoveAlone, setZoneMoveAlone] = useState(false);
+  /** 区画のタップを Shift+クリック扱いにする（Shift キーの代わり）。 */
+  const [multiSelect, setMultiSelect] = useState(false);
+  const { settings: userSettings } = useUserSettings();
+  const canPaste = useSyncExternalStore(subscribeClipboard, hasClipboard);
   const [resetZoneListConfirm, setResetZoneListConfirm] = useState(false);
+  const [resetPreset, setResetPreset] = useState<ZoneListPresetId>(DEFAULT_PRESET_ID);
   const [textPlacePosition, setTextPlacePosition] = useState<{ x: number; y: number } | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -250,6 +290,12 @@ const LayoutPage = () => {
     state.selectedId !== null
       ? state.placed.find((p) => p.id === state.selectedId && p.kind === 'zone')
       : undefined;
+  // 複数選択中の区画（区画名の一括表示切替用）
+  const selectedZoneIds = state.selectedIds.filter(
+    (id) => state.placed.find((p) => p.id === id)?.kind === 'zone',
+  );
+  const setZonesShowName = (ids: string[], show: boolean | undefined) =>
+    actions.updatePlacedMany(ids.map((id) => ({ id, attrs: { showName: show } })));
   const selectedZoneTypeName =
     selectedZone && selectedZone.kind === 'zone'
       ? (state.zoneList.zones.find((z) => z.id === selectedZone.typeId)?.name ?? '(不明な区画)')
@@ -279,6 +325,20 @@ const LayoutPage = () => {
       ? state.placed.find((p) => p.id === state.selectedId && p.kind === 'polygon')
       : undefined;
   const placedZones = state.placed.filter((p): p is PlacedZone => p.kind === 'zone');
+
+  /*
+   * ゾーンを選択したとき、ステータスバーに操作のヒントを出す（v2.7.0）。
+   * 選択が変わった時点で 1 回だけ設定し、その後の操作メッセージ（コピー等）は通常どおり上書きする。
+   * ゾーン以外の選択に移ったら、ヒントが残っていれば消す。
+   */
+  const zoneHintId =
+    selectedPolygon && state.innerZoneId === null ? selectedPolygon.id : null;
+  const [prevZoneHintId, setPrevZoneHintId] = useState<string | null>(null);
+  if (zoneHintId !== prevZoneHintId) {
+    setPrevZoneHintId(zoneHintId);
+    if (zoneHintId) setStatusMessage(ZONE_SELECT_HINT);
+    else if (statusMessage === ZONE_SELECT_HINT) setStatusMessage(null);
+  }
   const zoneDims = (zone: PlacedZone) => {
     const t = state.zoneList.zones.find((z) => z.id === zone.typeId);
     return { width: zone.width ?? t?.width ?? 1, height: zone.height ?? t?.height ?? 1 };
@@ -287,10 +347,24 @@ const LayoutPage = () => {
     selectedPolygon && selectedPolygon.kind === 'polygon'
       ? residentsInPolygon(selectedPolygon, placedZones, zoneDims)
       : { byType: {}, total: 0 };
+  const polygonInnerZoneIds =
+    selectedPolygon && selectedPolygon.kind === 'polygon'
+      ? placedZones
+          .filter((z) => {
+            const d = zoneDims(z);
+            return isZoneFullyInPolygon(z, d.width, d.height, selectedPolygon.points);
+          })
+          .map((z) => z.id)
+      : [];
 
   /* ---------- 背景画像の読み込み ---------- */
   const handleLoadBackground = useCallback(
     (file: File) => {
+      if (isPdfFile(file)) {
+        // PDF はページ選択・回転・トリミングのモーダルを経由して取り込む
+        setPdfFile({ file, floorId: state.activeFloorId });
+        return;
+      }
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = typeof reader.result === 'string' ? reader.result : '';
@@ -305,7 +379,7 @@ const LayoutPage = () => {
       reader.onerror = () => setStatusMessage('ファイルの読み込みに失敗しました');
       reader.readAsDataURL(file);
     },
-    [actions],
+    [actions, state.activeFloorId],
   );
 
   /* ---------- 縮尺キャリブレーション ---------- */
@@ -368,6 +442,8 @@ const LayoutPage = () => {
     }
     if (state.isAddingText) actions.setIsAddingText(false);
     const next = !state.isAddingPolygon;
+    // 作図中は区画・テキストの選択（変形ハンドル）が頂点のクリックを邪魔しないよう選択を外す
+    if (next) actions.setSelectedId(null);
     actions.setIsAddingPolygon(next);
     setStatusMessage(
       next ? 'クリックで頂点を追加し、ダブルクリックか始点クリックで確定します（Esc で取消）' : null,
@@ -426,6 +502,26 @@ const LayoutPage = () => {
     actions.removePlacedMany(state.selectedIds);
   }, [actions, state.selectedIds]);
 
+  /* ---------- コピー・貼り付け（タッチ向けボタン。キーボードは Canvas 側） ---------- */
+  const handleCopy = useCallback(() => {
+    const items = state.selectedIds
+      .map((id) => state.placed.find((p) => p.id === id))
+      .filter((p): p is PlacedItem => p !== undefined);
+    const msg = copySelection(items, state.innerZoneId);
+    if (msg) setStatusMessage(msg);
+  }, [state.selectedIds, state.placed, state.innerZoneId]);
+
+  const handlePaste = useCallback(() => {
+    const typeIds = new Set(state.zoneList.zones.map((z) => z.id));
+    const pasted = pasteSelection(userSettings.snap, (id) => typeIds.has(id));
+    if (!pasted) return;
+    if (pasted.result.items.length > 0) {
+      actions.addItems(pasted.result.items);
+      actions.setSelection(pasted.result.selectedIds, pasted.result.innerZoneId);
+    }
+    setStatusMessage(pasted.message);
+  }, [state.zoneList.zones, userSettings.snap, actions]);
+
   /* ---------- 全削除 ---------- */
   const handleClearAllConfirm = useCallback(() => {
     actions.clearAll();
@@ -468,11 +564,16 @@ const LayoutPage = () => {
   }, [pendingZoneListFile, applyZoneListFile]);
 
   /* ---------- 区画リストをデフォルトに戻す ---------- */
-  const handleResetZoneList = useCallback(() => {
-    actions.resetZoneListToDefault();
+  const handleResetZoneList = useCallback(async () => {
     setResetZoneListConfirm(false);
-    setStatusMessage('区画リストをデフォルトに戻しました（配置済みの区画もクリアしました）');
-  }, [actions]);
+    try {
+      const list = await loadZoneListPreset(resetPreset);
+      actions.resetZoneListToDefault(list, resetPreset);
+      setStatusMessage(`区画リストを「${list.name}」に戻しました（配置済みの区画もクリアしました）`);
+    } catch {
+      setStatusMessage('既定の区画リストの読み込みに失敗しました');
+    }
+  }, [actions, resetPreset]);
 
   /* ---------- レイアウト保存（ファイル名入力） ---------- */
   const handleOpenSaveLayout = useCallback(() => {
@@ -632,6 +733,20 @@ const LayoutPage = () => {
         onRename={actions.renameFloor}
         onRemove={actions.removeFloor}
         onMove={actions.moveFloor}
+        rightSection={
+          <EditActionsBar
+            hasSelection={state.selectedIds.length > 0}
+            canPaste={canPaste}
+            multiSelect={multiSelect}
+            zoneMoveAlone={zoneMoveAlone}
+            onCopy={handleCopy}
+            onPaste={handlePaste}
+            onDelete={handleRemoveSelected}
+            onDeselect={() => actions.setSelectedId(null)}
+            onToggleMultiSelect={() => setMultiSelect((v) => !v)}
+            onToggleZoneMoveAlone={() => setZoneMoveAlone((v) => !v)}
+          />
+        }
       />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <ZonePalette
@@ -652,6 +767,8 @@ const LayoutPage = () => {
           onCursorMove={useShared ? handleCursorMove : undefined}
           onStatusMessage={setStatusMessage}
           fitRequest={fitRequest}
+          zoneMoveAlone={zoneMoveAlone}
+          multiSelect={multiSelect}
         />
         {selectedZone && selectedZone.kind === 'zone' && (
           <SelectionPanel
@@ -659,8 +776,22 @@ const LayoutPage = () => {
             zone={selectedZone}
             zoneTypeName={selectedZoneTypeName}
             residentTypes={state.residentTypes}
+            nameShown={isPlacedZoneNameShown(
+              selectedZone,
+              state.zoneList.zones.find((z) => z.id === selectedZone.typeId),
+            )}
             onChange={(residents) => actions.setZoneResidents(selectedZone.id, residents)}
+            onShowNameChange={(show) => setZonesShowName([selectedZone.id], show)}
+            onDelete={() => actions.removePlacedMany([selectedZone.id])}
             onClose={() => actions.setSelectedId(null)}
+          />
+        )}
+        {!selectedZone && !selectedPolygon && selectedZoneIds.length >= 2 && (
+          <MultiZonePanel
+            count={selectedZoneIds.length}
+            onShowNameChange={(show) => setZonesShowName(selectedZoneIds, show)}
+            onDelete={() => actions.removePlacedMany(selectedZoneIds)}
+            onClose={() => actions.setSelection([])}
           />
         )}
         {selectedPolygon && selectedPolygon.kind === 'polygon' && (
@@ -671,6 +802,12 @@ const LayoutPage = () => {
             byType={polygonCount.byType}
             total={polygonCount.total}
             onChange={(attrs) => actions.updatePlaced(selectedPolygon.id, attrs)}
+            innerZoneCount={polygonInnerZoneIds.length}
+            onInnerZonesShowName={(show) => setZonesShowName(polygonInnerZoneIds, show)}
+            moveAlone={zoneMoveAlone}
+            onMoveAloneChange={setZoneMoveAlone}
+            innerSelection={state.innerZoneId !== null}
+            onDelete={() => actions.removePlacedMany(state.selectedIds)}
             onClose={() => actions.setSelectedId(null)}
           />
         )}
@@ -704,6 +841,28 @@ const LayoutPage = () => {
         onCancel={handleTextCancel}
         onSubmit={handleTextSubmit}
       />
+
+      {/* PDF 図面の取り込み（ページ選択・回転・トリミング） */}
+      {pdfFile && (
+        <PdfImportModal
+          file={pdfFile.file}
+          floorName={state.floors.find((f) => f.id === pdfFile.floorId)?.name ?? ''}
+          onCancel={() => setPdfFile(null)}
+          onImport={(bg) => {
+            // 取り込み中に階層を切り替えていても、開始時の階層に読み込む
+            if (pdfFile.floorId === state.activeFloorId) {
+              actions.setBackground(bg);
+            } else {
+              setStatusMessage('取り込み中に階層が切り替わったため、読み込みを中止しました');
+              setPdfFile(null);
+              return;
+            }
+            setPdfFile(null);
+            setFitRequest((n) => n + 1); // 図面全体が見えるズームに合わせる
+            setStatusMessage(`PDF「${pdfFile.file.name}」から図面を読み込みました`);
+          }}
+        />
+      )}
 
       {/* ユーザー設定モーダル（開くたびに最新値で再マウント） */}
       {settingsOpen && (
@@ -889,14 +1048,15 @@ const LayoutPage = () => {
       >
         <Stack>
           <Text size="sm">
-            区画リストをデフォルトに戻します。配置されている区画も全て削除され、共有区画リスト
-            （他ツールと共有される設定）もクリアされます。よろしいですか？
+            区画リストを選択した既定のリストに戻します。配置されている区画も全て削除され、共有区画リスト
+            （他ツールと共有される設定）も置き換わります。よろしいですか？
           </Text>
+          <ZoneListPresetPicker value={resetPreset} onChange={setResetPreset} />
           <Group justify="flex-end" mt="md">
             <Button variant="default" onClick={() => setResetZoneListConfirm(false)}>
               キャンセル
             </Button>
-            <Button color="red" onClick={handleResetZoneList}>
+            <Button color="red" onClick={() => void handleResetZoneList()}>
               デフォルトに戻す
             </Button>
           </Group>

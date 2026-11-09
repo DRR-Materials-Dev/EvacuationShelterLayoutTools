@@ -1,4 +1,9 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+import {
+  CANVAS_DROP_ATTR,
+  PALETTE_DROP_EVENT,
+  type PaletteDropDetail,
+} from './paletteDrop.ts';
 import { Stack, Text, Title, ScrollArea, Paper, Button, Group, Tooltip } from '@mantine/core';
 import { IconPencil, IconList, IconRestore } from '@tabler/icons-react';
 import type { ZoneList } from '../../shared/types.ts';
@@ -24,6 +29,45 @@ const ZonePalette = ({
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>, typeId: string) => {
     e.dataTransfer.setData('typeId', typeId);
     e.dataTransfer.effectAllowed = 'copy';
+  };
+
+  /*
+   * タッチ（指・ペン）での配置（v2.7.0）。iPad の Safari では HTML5 D&D が使えないため、
+   * ポインタを追跡して指の位置に区画のゴーストを表示し、キャンバスの上で離したら配置する。
+   * 縦方向のスワイプはリストのスクロールに任せる（touch-action: pan-y）。
+   */
+  const [ghost, setGhost] = useState<{ name: string; color: string; x: number; y: number } | null>(
+    null,
+  );
+  const touchDragRef = useRef<{ typeId: string; pointerId: number } | null>(null);
+  const handlePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    zone: { id: string; name: string; color: string },
+  ) => {
+    if (e.pointerType === 'mouse') return; // マウスは従来の HTML5 D&D
+    touchDragRef.current = { typeId: zone.id, pointerId: e.pointerId };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setGhost({ name: zone.name, color: zone.color, x: e.clientX, y: e.clientY });
+  };
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (touchDragRef.current?.pointerId !== e.pointerId) return;
+    setGhost((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : g));
+  };
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = touchDragRef.current;
+    if (drag?.pointerId !== e.pointerId) return;
+    touchDragRef.current = null;
+    setGhost(null);
+    const target = document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest(`[${CANVAS_DROP_ATTR}]`);
+    if (!target) return;
+    const detail: PaletteDropDetail = { typeId: drag.typeId, clientX: e.clientX, clientY: e.clientY };
+    target.dispatchEvent(new CustomEvent(PALETTE_DROP_EVENT, { detail }));
+  };
+  const handlePointerCancel = () => {
+    touchDragRef.current = null;
+    setGhost(null);
   };
 
   return (
@@ -60,7 +104,7 @@ const ZonePalette = ({
               読込み
             </Button>
           </Tooltip>
-          <Tooltip label={canLoad ? '区画リストを既定 (デフォルト) に戻す' : '参加者は初期化できません（ホストのみ）'}>
+          <Tooltip label={canLoad ? '区画リストを既定のリスト（標準／自治体研究会用）に戻す' : '参加者は初期化できません（ホストのみ）'}>
             <Button
               size="xs"
               variant="light"
@@ -85,7 +129,7 @@ const ZonePalette = ({
           }}
         />
         <Text size="xs" c="dimmed">
-          ドラッグして配置
+          ドラッグして配置（タブレットは指で図面の上へ）
         </Text>
         <Text size="xs" c="dimmed">
           リスト: {zoneList.name}
@@ -98,7 +142,12 @@ const ZonePalette = ({
               key={zone.id}
               draggable
               onDragStart={(e) => handleDragStart(e, zone.id)}
+              onPointerDown={(e) => handlePointerDown(e, zone)}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
               style={{
+                touchAction: 'pan-y',
                 padding: '8px 10px',
                 background: '#fafafa',
                 border: '1px solid #e0e0e0',
@@ -118,6 +167,29 @@ const ZonePalette = ({
           ))}
         </Stack>
       </ScrollArea>
+      {/* タッチでドラッグ中の区画（指の位置に追従） */}
+      {ghost && (
+        <div
+          style={{
+            position: 'fixed',
+            left: ghost.x,
+            top: ghost.y,
+            transform: 'translate(-50%, -120%)',
+            padding: '6px 10px',
+            background: '#fff',
+            border: '1px solid #90a4ae',
+            borderLeft: `5px solid ${ghost.color}`,
+            borderRadius: 4,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+            fontSize: 14,
+            pointerEvents: 'none',
+            zIndex: 1000,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {ghost.name}
+        </div>
+      )}
     </Paper>
   );
 };

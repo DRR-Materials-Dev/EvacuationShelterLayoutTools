@@ -44,6 +44,13 @@ import type {
   ScaleUnit,
 } from '../tools/print/types.ts';
 
+import ZoneListPresetPicker from '../shared/components/ZoneListPresetPicker.tsx';
+import {
+  DEFAULT_PRESET_ID,
+  loadZoneListPreset,
+  type ZoneListPresetId,
+} from '../shared/zoneListPresets.ts';
+
 const PrintPage = () => {
   const state = usePrintState();
   const { settings, zoneList, updateSettings } = state;
@@ -51,6 +58,7 @@ const PrintPage = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetPreset, setResetPreset] = useState<ZoneListPresetId>(DEFAULT_PRESET_ID);
 
   /* ---------- 派生値 ---------- */
   const paperMm = useMemo(() => getPaperSizeMm(settings.paper), [settings.paper]);
@@ -81,11 +89,16 @@ const PrintPage = () => {
     }
   };
 
-  const handleResetConfirm = () => {
-    state.resetZoneListToDefault();
+  const handleResetConfirm = async () => {
+    try {
+      const list = await loadZoneListPreset(resetPreset);
+      state.resetZoneListToDefault(list, resetPreset);
+      setStatusMessage(`区画リストを「${list.name}」に戻しました（枚数指定もリセット）`);
+      setErrorMessage(null);
+    } catch {
+      setErrorMessage('既定の区画リストの読み込みに失敗しました');
+    }
     setResetConfirm(false);
-    setStatusMessage('区画リストをデフォルトに戻しました（枚数指定もリセット）');
-    setErrorMessage(null);
   };
 
   const handleGenerate = () => {
@@ -528,14 +541,15 @@ const PrintPage = () => {
       >
         <Stack>
           <Text size="sm">
-            区画リストをデフォルトに戻します。共有区画リスト（他ツールと共有される設定）と、
+            区画リストを選択した既定のリストに戻します。共有区画リスト（他ツールと共有される設定）が置き換わり、
             設定済みの枚数指定もクリアされます。よろしいですか？
           </Text>
+          <ZoneListPresetPicker value={resetPreset} onChange={setResetPreset} />
           <Group justify="flex-end" mt="md">
             <Button variant="default" onClick={() => setResetConfirm(false)}>
               キャンセル
             </Button>
-            <Button color="red" onClick={handleResetConfirm}>
+            <Button color="red" onClick={() => void handleResetConfirm()}>
               デフォルトに戻す
             </Button>
           </Group>
