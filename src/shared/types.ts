@@ -76,6 +76,8 @@ export type PlacedZone = {
   height?: number;
   /** 居住者の種類ID -> 人数。未定義・0 は「設定なし」。設計書 §8.1.2。 */
   residents?: Record<string, number>;
+  /** この区画だけ区画名の表示を上書きする（v2.7.0）。未定義は区画リストの showName に従う。 */
+  showName?: boolean;
 };
 
 export type TextBlock = {
@@ -101,6 +103,12 @@ export type PolygonZone = {
   /** 頂点（メートル単位）。3 点以上。 */
   points: { x: number; y: number }[];
   label?: string;
+  /** ラベルを図面上に表示するか（v2.7.0）。未定義は false（従来どおり右パネルのみ）。 */
+  showLabel?: boolean;
+  /** 図面上のラベルの文字サイズ（px、縮尺 1 倍時）。未定義は DEFAULT_POLYGON_LABEL_FONT_PX。 */
+  labelFontSize?: number;
+  /** 図面上のラベルの文字色。未定義は '#000000'。 */
+  labelColor?: string;
   /** 枠線の種類 */
   strokeStyle: 'solid' | 'dashed' | 'dotted';
   strokeColor: string; // #RRGGBB
@@ -194,6 +202,10 @@ export const getZoneBorder = (z: ZoneType): { show: boolean; color: string; widt
  * - displayNameSameAsName が false なら displayName を使用（未定義時は空文字）
  * - そうでなければ name を使用
  */
+/** 配置済み区画に区画名を表示するか。区画ごとの上書き → 区画リストの設定 → 既定 true の順。 */
+export const isPlacedZoneNameShown = (p: PlacedZone, t: ZoneType | undefined): boolean =>
+  p.showName ?? t?.showName !== false;
+
 export const getZoneDisplayText = (z: ZoneType): string =>
   z.displayNameSameAsName === false ? (z.displayName ?? '') : z.name;
 

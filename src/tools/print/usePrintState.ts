@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { persistPresetAsShared, type ZoneListPresetId } from '../../shared/zoneListPresets.ts';
 import { DEFAULT_ZONE_LIST } from '../../shared/constants.ts';
 import type { ZoneList } from '../../shared/types.ts';
 import {
-  clearStoredZoneList,
   getStoredPrintSettingsRaw,
   getStoredZoneList,
   setStoredPrintSettingsRaw,
@@ -28,7 +28,8 @@ export type PrintActions = {
   /** 共有区画リスト（IndexedDB）を再読み込みする */
   reloadSharedList: () => Promise<void>;
   /** 区画リストをデフォルトに戻す（共有 IndexedDB もクリア、枚数指定もリセット） */
-  resetZoneListToDefault: () => void;
+  /** 既定（プリセット）の区画リストに戻す。省略時は標準区画リスト。 */
+  resetZoneListToDefault: (list?: ZoneList, presetId?: ZoneListPresetId) => void;
   updateSettings: (patch: Partial<PrintSettings>) => void;
 };
 
@@ -122,12 +123,15 @@ export const usePrintState = (): PrintState & PrintActions => {
     if (stored) setZoneList(cloneList(stored));
   }, []);
 
-  const resetZoneListToDefault = useCallback(() => {
-    setZoneList(cloneList(DEFAULT_ZONE_LIST));
-    void clearStoredZoneList();
+  const resetZoneListToDefault = useCallback(
+    (list: ZoneList = DEFAULT_ZONE_LIST, presetId: ZoneListPresetId = 'standard') => {
+    setZoneList(cloneList(list));
+    void persistPresetAsShared(presetId, list);
     // 旧 zoneList に依存していた枚数指定はリセット
     setSettings((s) => ({ ...s, counts: {} }));
-  }, []);
+  },
+    [],
+  );
 
   const updateSettings = useCallback((patch: Partial<PrintSettings>) => {
     setSettings((s) => ({ ...s, ...patch }));

@@ -79,3 +79,51 @@ export const pasteItems = (
   if (items.length === 0) return { items, selectedIds: [], innerZoneId: null, skipped };
   return { items, selectedIds: items.map((i) => i.id), innerZoneId, skipped };
 };
+
+/* ---------- キーボード・ボタン共通のコピー／貼り付け（v2.7.0） ---------- */
+
+// 貼り付けボタンの有効／無効を画面に反映するための購読（useSyncExternalStore 用）
+const listeners = new Set<() => void>();
+export const subscribeClipboard = (fn: () => void): (() => void) => {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+};
+const notify = () => listeners.forEach((fn) => fn());
+
+/** 選択中の配置物をコピーし、ステータスバー用のメッセージを返す（何も無ければ null）。 */
+export const copySelection = (items: PlacedItem[], innerZoneId: string | null): string | null => {
+  if (items.length === 0) return null;
+  copyItems(items, innerZoneId);
+  notify();
+  const zoneCount = items.filter((i) => i.kind === 'zone').length;
+  const hasPolygon = items.some((i) => i.kind === 'polygon');
+  const hasText = items.some((i) => i.kind === 'text');
+  return hasPolygon
+    ? zoneCount > 0
+      ? `ゾーンと区画 ${zoneCount} 件をコピーしました`
+      : 'ゾーンをコピーしました'
+    : hasText
+      ? 'テキストをコピーしました'
+      : `区画 ${zoneCount} 件をコピーしました`;
+};
+
+/**
+ * クリップボードの内容を貼り付け用に複製する。ずらし量は吸着間隔の倍数で 0.5m 前後
+ * （吸着が無効なら 0.5m）。状態への追加は呼び出し側で行う。
+ */
+export const pasteSelection = (
+  snap: { enabled: boolean; sizeMeters: number },
+  isTypeAvailable: (typeId: string) => boolean,
+): { result: PasteResult; message: string } | null => {
+  const step =
+    snap.enabled && snap.sizeMeters > 0
+      ? Math.max(1, Math.round(0.5 / snap.sizeMeters)) * snap.sizeMeters
+      : 0.5;
+  const result = pasteItems(step, isTypeAvailable);
+  if (!result) return null;
+  const message =
+    result.skipped > 0
+      ? `貼り付けました（区画リストに無い区画 ${result.skipped} 件は除外）`
+      : '貼り付けました';
+  return { result, message };
+};

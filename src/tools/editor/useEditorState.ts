@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { persistPresetAsShared, type ZoneListPresetId } from '../../shared/zoneListPresets.ts';
 import { DEFAULT_ZONE_LIST } from '../../shared/constants.ts';
 import type { ZoneList, ZoneType } from '../../shared/types.ts';
 import {
-  clearStoredZoneList,
   getStoredZoneList,
   setStoredZoneList,
 } from '../../shared/storage.ts';
@@ -26,7 +26,8 @@ export type EditorActions = {
   /** 現在のリストを IndexedDB に保存し、isDirty を解除する。`.list.json` のダウンロードは呼び出し側で行う */
   markSaved: () => void;
   /** デフォルトの区画リストに戻す（IndexedDB も同時に更新し、isDirty 解除） */
-  resetToDefault: () => void;
+  /** 既定（プリセット）の区画リストに戻す。省略時は標準区画リスト。 */
+  resetToDefault: (list?: ZoneList, presetId?: ZoneListPresetId) => void;
 };
 
 const generateId = () => `zone-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -144,13 +145,16 @@ export const useEditorState = (): EditorState & EditorActions => {
     setIsDirty(false);
   }, [zoneList]);
 
-  const resetToDefault = useCallback(() => {
-    setZoneList(cloneList(DEFAULT_ZONE_LIST));
-    setSelectedId(null);
-    setIsDirty(false);
-    // 他ツールへの伝播のため、IndexedDB 上の共有リストも初期化（= 削除して未保存扱い）
-    void clearStoredZoneList();
-  }, []);
+  const resetToDefault = useCallback(
+    (list: ZoneList = DEFAULT_ZONE_LIST, presetId: ZoneListPresetId = 'standard') => {
+      setZoneList(cloneList(list));
+      setSelectedId(null);
+      setIsDirty(false);
+      // 他ツールへの伝播のため、IndexedDB 上の共有リストも更新（標準は削除して未保存扱い）
+      void persistPresetAsShared(presetId, list);
+    },
+    [],
+  );
 
   return {
     zoneList,

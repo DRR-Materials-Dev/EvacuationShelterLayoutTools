@@ -1,5 +1,16 @@
-import { Stack, Group, Text, NumberInput, ColorSwatch, Divider, ActionIcon, Tooltip } from '@mantine/core';
-import { IconX } from '@tabler/icons-react';
+import {
+  Stack,
+  Group,
+  Text,
+  NumberInput,
+  ColorSwatch,
+  Divider,
+  ActionIcon,
+  Tooltip,
+  Switch,
+  Button,
+} from '@mantine/core';
+import { IconTrash, IconX } from '@tabler/icons-react';
 import type { PlacedZone, ResidentType } from '../../shared/types.ts';
 import { getZoneResidentTotal } from '../../shared/types.ts';
 
@@ -7,7 +18,13 @@ type Props = {
   zone: PlacedZone;
   zoneTypeName: string;
   residentTypes: ResidentType[];
+  /** 現在、図面上に区画名を表示しているか（区画ごとの上書きを反映済み）。 */
+  nameShown: boolean;
   onChange: (residents: Record<string, number>) => void;
+  /** 区画名表示の上書き。undefined は区画リストの設定に戻す。 */
+  onShowNameChange: (show: boolean | undefined) => void;
+  /** この区画を削除する（Delete キーの無いタブレット向け）。 */
+  onDelete: () => void;
   onClose: () => void;
 };
 
@@ -15,7 +32,16 @@ type Props = {
  * 配置済み区画を選択したときに表示する右側パネル。
  * 区画ごとの居住者人数を種類別に設定する（設計書 §8.1.2）。
  */
-const SelectionPanel = ({ zone, zoneTypeName, residentTypes, onChange, onClose }: Props) => {
+const SelectionPanel = ({
+  zone,
+  zoneTypeName,
+  residentTypes,
+  nameShown,
+  onChange,
+  onShowNameChange,
+  onDelete,
+  onClose,
+}: Props) => {
   const total = getZoneResidentTotal(zone);
 
   const handleChange = (typeId: string, value: number) => {
@@ -47,6 +73,17 @@ const SelectionPanel = ({ zone, zoneTypeName, residentTypes, onChange, onClose }
         </Tooltip>
       </Group>
 
+      <Switch
+        label="区画名を図面に表示"
+        checked={nameShown}
+        onChange={(e) => onShowNameChange(e.currentTarget.checked)}
+      />
+      {zone.showName !== undefined && (
+        <Button size="compact-xs" variant="subtle" color="gray" style={{ flexShrink: 0 }} onClick={() => onShowNameChange(undefined)}>
+          区画リストの設定に戻す
+        </Button>
+      )}
+
       <Divider label="居住者人数" labelPosition="left" />
 
       {residentTypes.map((rt) => (
@@ -75,6 +112,18 @@ const SelectionPanel = ({ zone, zoneTypeName, residentTypes, onChange, onClose }
         </Text>
         <Text fw={700}>{total} 人</Text>
       </Group>
+
+      <Divider />
+      <Button
+        size="xs"
+        variant="light"
+        color="red"
+        leftSection={<IconTrash size={14} />}
+        style={{ flexShrink: 0 }}
+        onClick={onDelete}
+      >
+        この区画を削除
+      </Button>
     </Stack>
   );
 };

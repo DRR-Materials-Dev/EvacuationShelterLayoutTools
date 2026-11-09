@@ -95,7 +95,7 @@ const Toolbar = ({
       }}
       wrap="nowrap"
     >
-      <Tooltip label={canLoad ? '施設の図面画像を読み込む' : '参加者は図面の読み込みはできません（ホストのみ）'}>
+      <Tooltip label={canLoad ? '施設の図面（画像または PDF）を読み込む' : '参加者は図面の読み込みはできません（ホストのみ）'}>
         <Button
           variant="default"
           leftSection={<IconPhoto size={16} />}
@@ -109,7 +109,7 @@ const Toolbar = ({
       <input
         ref={bgInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf,.pdf"
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];

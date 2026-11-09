@@ -47,6 +47,7 @@ const parsePlacedZone = (raw: Record<string, unknown>, index: number): PlacedZon
     }
     if (Object.keys(residents).length > 0) out.residents = residents;
   }
+  if (typeof raw.showName === 'boolean') out.showName = raw.showName;
   return out;
 };
 
@@ -129,6 +130,9 @@ const parsePolygonZone = (raw: Record<string, unknown>, index: number): PolygonZ
     showCount: typeof raw.showCount === 'boolean' ? raw.showCount : DEFAULT_POLYGON_STYLE.showCount,
   };
   if (typeof raw.label === 'string') out.label = raw.label;
+  if (typeof raw.showLabel === 'boolean') out.showLabel = raw.showLabel;
+  if (typeof raw.labelFontSize === 'number' && raw.labelFontSize > 0) out.labelFontSize = raw.labelFontSize;
+  if (typeof raw.labelColor === 'string') out.labelColor = raw.labelColor;
   return out;
 };
 

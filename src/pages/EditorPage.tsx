@@ -8,12 +8,19 @@ import ZoneDetail from '../tools/editor/ZoneDetail.tsx';
 import ListToolbar from '../tools/editor/ListToolbar.tsx';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
 import { useEditorState } from '../tools/editor/useEditorState.ts';
+import ZoneListPresetPicker from '../shared/components/ZoneListPresetPicker.tsx';
+import {
+  DEFAULT_PRESET_ID,
+  loadZoneListPreset,
+  type ZoneListPresetId,
+} from '../shared/zoneListPresets.ts';
 import { downloadZoneList, readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
 
 const EditorPage = () => {
   const editor = useEditorState();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetPreset, setResetPreset] = useState<ZoneListPresetId>(DEFAULT_PRESET_ID);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -57,12 +64,17 @@ const EditorPage = () => {
     setErrorMessage(null);
   }, [editor]);
 
-  const handleResetConfirm = useCallback(() => {
-    editor.resetToDefault();
+  const handleResetConfirm = useCallback(async () => {
+    try {
+      const list = await loadZoneListPreset(resetPreset);
+      editor.resetToDefault(list, resetPreset);
+      setStatusMessage(`区画リストを「${list.name}」に戻しました`);
+      setErrorMessage(null);
+    } catch {
+      setErrorMessage('既定の区画リストの読み込みに失敗しました');
+    }
     setResetConfirm(false);
-    setStatusMessage('区画リストをデフォルトに戻しました');
-    setErrorMessage(null);
-  }, [editor]);
+  }, [editor, resetPreset]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -141,14 +153,15 @@ const EditorPage = () => {
       >
         <Stack>
           <Text size="sm">
-            現在編集中の区画リストを破棄して、デフォルトの区画リストに戻します。
-            共有区画リスト（他ツールと共有される設定）もクリアされます。よろしいですか？
+            現在編集中の区画リストを破棄して、選択した既定の区画リストに戻します。
+            共有区画リスト（他ツールと共有される設定）も置き換わります。よろしいですか？
           </Text>
+          <ZoneListPresetPicker value={resetPreset} onChange={setResetPreset} />
           <Group justify="flex-end" mt="md">
             <Button variant="default" onClick={() => setResetConfirm(false)}>
               キャンセル
             </Button>
-            <Button color="red" onClick={handleResetConfirm}>
+            <Button color="red" onClick={() => void handleResetConfirm()}>
               デフォルトに戻す
             </Button>
           </Group>

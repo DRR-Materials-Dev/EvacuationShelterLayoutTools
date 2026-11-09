@@ -14,13 +14,41 @@ import {
   Tag,
 } from 'react-konva';
 import useImage from 'use-image';
+import { Button } from '@mantine/core';
+import { CANVAS_DROP_ATTR, PALETTE_DROP_EVENT, type PaletteDropDetail } from './paletteDrop.ts';
+
+// 2 本指ピンチ中も、もう 1 本の指のヒット判定を続ける（Konva のマルチタッチ例と同じ設定）
+Konva.hitOnDragEnabled = true;
+
+/** Konva イベントがタッチ（指）由来か。Konva はタッチ／ポインタの両方の経路でイベントを出す。 */
+const isTouchEvt = (evt: Event): boolean =>
+  evt.type.startsWith('touch') || (evt as PointerEvent).pointerType === 'touch';
+
+/*
+ * タップの後にブラウザが互換用に発火するマウスの click を無視する（v2.7.0）。
+ * iPad の Safari（や Chrome のタッチ）では、タップ 1 回で Konva の tap と click が両方届き、
+ * ゾーン作図の頂点が二重に入る・ゾーンをタップすると即ゾーン内選択になる、といった誤動作になる。
+ */
+let lastTouchAt = 0;
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'touchstart',
+    () => {
+      lastTouchAt = Date.now();
+    },
+    { capture: true, passive: true },
+  );
+}
+const isGhostClick = (evt: Event): boolean => !isTouchEvt(evt) && Date.now() - lastTouchAt < 800;
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { Box } from 'konva/lib/shapes/Transformer';
 import type { PlacedItem, PlacedZone, PolygonZone, TextBlock, ZoneType } from '../../shared/types.ts';
+import { DEFAULT_POLYGON_LABEL_FONT_PX } from '../../shared/constants.ts';
 import type { RemotePresence } from '../../collab/session.ts';
 import {
   getZoneBorder,
   getZoneDisplayText,
+  isPlacedZoneNameShown,
   getZoneNameAlignH,
   getZoneNameAlignV,
   getZoneNameColor,
@@ -37,7 +65,7 @@ import { rotationSnapConfig, snapPoint, snapValue, withSnapInverted } from '../.
 import { useUserSettings } from '../../shared/settings.tsx';
 import type { LayoutActions, LayoutState } from './useLayoutState.ts';
 import type { Point } from './types.ts';
-import { copyItems, hasClipboard, pasteItems, translateAttrs } from './clipboard.ts';
+import { copySelection, hasClipboard, pasteSelection, translateAttrs } from './clipboard.ts';
 
 /** 入力欄・モーダル内にフォーカスがあるか（キーボードショートカットを無効にする判定）。 */
 const isTypingOrInDialog = (): boolean => {
@@ -55,7 +83,8 @@ const isTypingOrInDialog = (): boolean => {
 
 /** 複数選択のドラッグで、つかんだ配置物以外を追従させるためのハンドラ。 */
 type GroupDragHandlers = {
-  start: (node: Konva.Node) => void;
+  /** alone: ゾーン単体のドラッグで Alt 押下時、中の区画を連れずにゾーンだけ動かす */
+  start: (node: Konva.Node, alone?: boolean) => void;
   /** invertSnap: Ctrl 押下でスナップの ON/OFF を反転（ドラッグ中も吸着させる） */
   move: (node: Konva.Node, invertSnap: boolean) => void;
   /** invertSnap: Ctrl 押下でスナップの ON/OFF を反転 */
@@ -99,6 +128,10 @@ type Props = {
   onStatusMessage?: (message: string | null) => void;
   /** 値が変わるたびに、図面全体が見えるようズーム・表示位置を合わせる（レイアウト読込直後）。 */
   fitRequest?: number;
+  /** ゾーンのドラッグで中の区画を連れずにゾーンだけ動かす（Alt キーの無いタブレット用の切替）。 */
+  zoneMoveAlone?: boolean;
+  /** 区画のクリック／タップを Shift+クリック扱いにする（Shift キーの無いタブレット用の切替）。 */
+  multiSelect?: boolean;
 };
 
 const BackgroundImageDisplay = ({
@@ -194,6 +227,8 @@ const Canvas = ({
   onCursorMove,
   onStatusMessage,
   fitRequest,
+  zoneMoveAlone = false,
+  multiSelect = false,
 }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cursorThrottleRef = useRef(0);
@@ -395,6 +430,9 @@ const Canvas = ({
     window.addEventListener('mouseup', onUp);
   };
 
+  // テキスト配置・ゾーン作図中は、区画・テキストを選択せずクリックをステージへ通す（頂点入力を優先）
+  const passThroughClicks = state.isAddingText || state.isAddingPolygon;
+
   // Shift+ドラッグで範囲選択を始めてよい状態か（配置・作図・縮尺のモード中は不可）
   const canBoxSelect = !state.isScaleMode && !state.isAddingText && !state.isAddingPolygon;
 
@@ -407,8 +445,10 @@ const Canvas = ({
     if (isEmpty || isBg) startBoxSelect();
   };
 
-  const handleItemClick = (item: PlacedItem, shiftKey: boolean) => {
+  const handleItemClick = (item: PlacedItem, shiftKeyPressed: boolean) => {
     if (suppressClickRef.current) return;
+    // 複数選択モード（Shift の無いタブレット用）では Shift+クリックと同じ扱い
+    const shiftKey = shiftKeyPressed || multiSelect;
     if (item.kind === 'zone') {
       if (!shiftKey) {
         actions.setSelectedId(item.id);
@@ -460,22 +500,38 @@ const Canvas = ({
   const groupDragRef = useRef<{
     leaderStart: Point;
     others: { node: Konva.Node; start: Point }[];
+    /** 移動対象（つかんだ配置物を含む）。ドラッグ開始時に確定する。 */
+    items: PlacedItem[];
   } | null>(null);
+
+  /** ゾーンに完全に収まる区画（ゾーンを動かすときに一緒に動かす。v2.7.0）。 */
+  const zonesInsidePolygon = (polygon: PolygonZone): PlacedZone[] =>
+    placedZones.filter((z) => {
+      const d = zoneDims(z);
+      return isZoneFullyInPolygon(z, d.width, d.height, polygon.points);
+    });
 
   const findNode = (id: string): Konva.Node | undefined =>
     stageRef.current?.findOne((n: Konva.Node) => n.id() === id) ?? undefined;
 
   const makeGroupDrag = (leader: PlacedItem): GroupDragHandlers | undefined => {
-    if (state.selectedIds.length < 2 || !selectedSet.has(leader.id)) return undefined;
+    const isMulti = state.selectedIds.length >= 2 && selectedSet.has(leader.id);
+    // ゾーン単体のドラッグも、中の区画を連れて動かすためにまとめてドラッグとして扱う
+    if (!isMulti && leader.kind !== 'polygon') return undefined;
     return {
-      start: () => {
+      start: (_node, alone) => {
+        const items: PlacedItem[] = isMulti
+          ? selectedItems
+          : leader.kind === 'polygon' && !alone && !zoneMoveAlone
+            ? [leader, ...zonesInsidePolygon(leader)]
+            : [leader];
         const others: { node: Konva.Node; start: Point }[] = [];
-        for (const it of selectedItems) {
+        for (const it of items) {
           if (it.id === leader.id) continue;
           const node = findNode(it.id);
           if (node) others.push({ node, start: nodeOrigin(it) });
         }
-        groupDragRef.current = { leaderStart: nodeOrigin(leader), others };
+        groupDragRef.current = { leaderStart: nodeOrigin(leader), others, items };
       },
       move: (node, invertSnap) => {
         const g = groupDragRef.current;
@@ -518,7 +574,7 @@ const Canvas = ({
         for (const o of g.others) o.node.position(o.start);
         if (dx === 0 && dy === 0) return;
         actions.updatePlacedMany(
-          selectedItems.map((it) => ({ id: it.id, attrs: translateAttrs(it, dx, dy) })),
+          g.items.map((it) => ({ id: it.id, attrs: translateAttrs(it, dx, dy) })),
         );
       },
     };
@@ -553,45 +609,23 @@ const Canvas = ({
       if (key === 'c') {
         // 画面上の文字を選択している場合は通常のコピーに任せる
         if (window.getSelection()?.toString()) return;
-        const items = ctx.selectedItems;
-        if (items.length === 0) return;
+        const msg = copySelection(ctx.selectedItems, st.innerZoneId);
+        if (!msg) return;
         e.preventDefault();
-        copyItems(items, st.innerZoneId);
-        const zoneCount = items.filter((i) => i.kind === 'zone').length;
-        const hasPolygon = items.some((i) => i.kind === 'polygon');
-        const hasText = items.some((i) => i.kind === 'text');
-        ctx.onStatusMessage?.(
-          hasPolygon
-            ? zoneCount > 0
-              ? `ゾーンと区画 ${zoneCount} 件をコピーしました`
-              : 'ゾーンをコピーしました'
-            : hasText
-              ? 'テキストをコピーしました'
-              : `区画 ${zoneCount} 件をコピーしました`,
-        );
+        ctx.onStatusMessage?.(msg);
         return;
       }
 
       if (key === 'v') {
         if (!hasClipboard()) return;
         e.preventDefault();
-        // 吸着間隔の倍数で 0.5m 前後ずらす（吸着が無効なら 0.5m）
-        const snap = ctx.settings.snap;
-        const step =
-          snap.enabled && snap.sizeMeters > 0
-            ? Math.max(1, Math.round(0.5 / snap.sizeMeters)) * snap.sizeMeters
-            : 0.5;
-        const result = pasteItems(step, (typeId) => ctx.typeMap.has(typeId));
-        if (!result) return;
-        if (result.items.length > 0) {
-          ctx.actions.addItems(result.items);
-          ctx.actions.setSelection(result.selectedIds, result.innerZoneId);
+        const pasted = pasteSelection(ctx.settings.snap, (typeId) => ctx.typeMap.has(typeId));
+        if (!pasted) return;
+        if (pasted.result.items.length > 0) {
+          ctx.actions.addItems(pasted.result.items);
+          ctx.actions.setSelection(pasted.result.selectedIds, pasted.result.innerZoneId);
         }
-        ctx.onStatusMessage?.(
-          result.skipped > 0
-            ? `貼り付けました（区画リストに無い区画 ${result.skipped} 件は除外）`
-            : '貼り付けました',
-        );
+        ctx.onStatusMessage?.(pasted.message);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -658,7 +692,8 @@ const Canvas = ({
           const start = polygonDraft[0];
           const distPx =
             Math.hypot(start.x - xMeters, start.y - yMeters) * state.scaleRatio * state.viewScale;
-          if (distPx < 12) {
+          // 指は狙いがずれやすいので、タッチでは始点判定を広くとる
+          if (distPx < (isTouchEvt(e.evt) ? 28 : 12)) {
             finalizePolygon();
             return;
           }
@@ -765,6 +800,85 @@ const Canvas = ({
     e.preventDefault();
   };
 
+  /* ---------- タッチ：2 本指ピンチでズーム（v2.7.0） ---------- */
+
+  const pinchRef = useRef<{ dist: number; center: Point } | null>(null);
+  const handleTouchMove = (e: KonvaEventObject<TouchEvent>) => {
+    const touches = e.evt.touches;
+    const stage = stageRef.current;
+    if (!stage || !touches || touches.length !== 2) return;
+    e.evt.preventDefault();
+    // 1 本目の指で始まったパン・区画ドラッグは止めてピンチを優先する
+    if (stage.isDragging()) stage.stopDrag();
+    Konva.DD.node?.stopDrag();
+    const rect = stage.container().getBoundingClientRect();
+    const p1 = { x: touches[0].clientX - rect.left, y: touches[0].clientY - rect.top };
+    const p2 = { x: touches[1].clientX - rect.left, y: touches[1].clientY - rect.top };
+    const center = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    const last = pinchRef.current;
+    pinchRef.current = { dist, center };
+    if (!last || last.dist === 0) return;
+    const oldScale = stage.scaleX();
+    const newScale = Math.min(10, Math.max(0.1, oldScale * (dist / last.dist)));
+    // 指の中心の下にある図面上の点を保ったまま拡大し、中心の移動ぶんパンする
+    const pointTo = {
+      x: (last.center.x - stage.x()) / oldScale,
+      y: (last.center.y - stage.y()) / oldScale,
+    };
+    const newPos = { x: center.x - pointTo.x * newScale, y: center.y - pointTo.y * newScale };
+    stage.scale({ x: newScale, y: newScale });
+    stage.position(newPos);
+    actions.setViewScale(newScale);
+    actions.setStagePos(newPos);
+  };
+  const handleTouchEnd = (e: KonvaEventObject<TouchEvent>) => {
+    if (!e.evt.touches || e.evt.touches.length < 2) pinchRef.current = null;
+  };
+
+  // キャンバス上では Safari 独自のピンチ（ページ全体の拡大縮小）を止める
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const stop = (ev: Event) => ev.preventDefault();
+    el.addEventListener('gesturestart', stop, { passive: false });
+    el.addEventListener('gesturechange', stop, { passive: false });
+    el.addEventListener('gestureend', stop, { passive: false });
+    return () => {
+      el.removeEventListener('gesturestart', stop);
+      el.removeEventListener('gesturechange', stop);
+      el.removeEventListener('gestureend', stop);
+    };
+  }, []);
+
+  /* ---------- タッチ：パレットからの区画配置（paletteDrop.ts） ---------- */
+
+  const dropCtxRef = useRef({ scaleRatio: state.scaleRatio, settings, actions });
+  dropCtxRef.current = { scaleRatio: state.scaleRatio, settings, actions };
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onDrop = (ev: Event) => {
+      const { typeId, clientX, clientY } = (ev as CustomEvent<PaletteDropDetail>).detail;
+      const stage = stageRef.current;
+      if (!stage) return;
+      const ctx = dropCtxRef.current;
+      const rect = stage.container().getBoundingClientRect();
+      const pos = stage
+        .getAbsoluteTransform()
+        .copy()
+        .invert()
+        .point({ x: clientX - rect.left, y: clientY - rect.top });
+      const snapped = snapPoint(
+        { x: pos.x / ctx.scaleRatio, y: pos.y / ctx.scaleRatio },
+        ctx.settings,
+      );
+      ctx.actions.addPlacedZone(typeId, snapped.x, snapped.y);
+    };
+    el.addEventListener(PALETTE_DROP_EVENT, onDrop);
+    return () => el.removeEventListener(PALETTE_DROP_EVENT, onDrop);
+  }, [stageRef]);
+
   /* ---------- 描画 ---------- */
 
   return (
@@ -773,9 +887,12 @@ const Canvas = ({
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onMouseLeave={() => onCursorMove?.(null)}
+      {...{ [CANVAS_DROP_ATTR]: '' }}
       style={{
         flex: 1,
         position: 'relative',
+        // 指の操作（パン・ピンチ・区画のドラッグ）をブラウザのスクロール・拡大縮小に取られないようにする
+        touchAction: 'none',
         overflow: 'hidden',
         backgroundColor: '#e8e8e8',
         backgroundImage: 'radial-gradient(#ccc 1px, transparent 1px)',
@@ -790,11 +907,20 @@ const Canvas = ({
         scaleY={state.viewScale}
         x={state.stagePos.x}
         y={state.stagePos.y}
-        onClick={handleStageClick}
+        onClick={(e) => {
+          if (isGhostClick(e.evt)) return;
+          handleStageClick(e);
+        }}
         onTap={handleStageClick}
-        onDblClick={() => {
+        onDblClick={(e) => {
+          if (isGhostClick(e.evt)) return;
           if (state.isAddingPolygon) finalizePolygon();
         }}
+        onDblTap={() => {
+          if (state.isAddingPolygon) finalizePolygon();
+        }}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onMouseDown={handleStageMouseDown}
         onMouseMove={handleStageMouseMove}
         onWheel={handleWheel}
@@ -841,7 +967,7 @@ const Canvas = ({
                   showTransformer={isSingleSelection}
                   rotationSnap={rotationSnap}
                   isScaleMode={state.isScaleMode}
-                  isAddingText={state.isAddingText}
+                  isAddingText={passThroughClicks}
                   onSelect={(shift) => handleItemClick(item, shift)}
                   onChange={(attrs) => actions.updatePlaced(item.id, attrs)}
                   onEditRequest={() => onTextEditRequested(item.id)}
@@ -862,7 +988,7 @@ const Canvas = ({
                   rotationSnap={rotationSnap}
                   groupDrag={makeGroupDrag(item)}
                   isScaleMode={state.isScaleMode}
-                  isAddingText={state.isAddingText}
+                  isAddingText={passThroughClicks}
                   onSelect={(shift) => handleItemClick(item, shift)}
                   onChange={(attrs) => actions.updatePlaced(item.id, attrs)}
                   settings={settings}
@@ -947,6 +1073,47 @@ const Canvas = ({
           </Layer>
         )}
       </Stage>
+
+      {/* ゾーン作図中の操作ボタン（ダブルクリックしにくいタッチ端末向け。マウスでも使える） */}
+      {state.isAddingPolygon && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 8,
+            bottom: 8,
+            display: 'flex',
+            gap: 6,
+            padding: 6,
+            background: 'rgba(255,255,255,0.92)',
+            border: '1px solid #cfd8dc',
+            borderRadius: 6,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+          }}
+        >
+          <Button size="sm" onClick={finalizePolygon} disabled={polygonDraft.length < 3}>
+            確定（{polygonDraft.length} 点）
+          </Button>
+          <Button
+            size="sm"
+            variant="default"
+            onClick={() => setPolygonDraft((prev) => prev.slice(0, -1))}
+            disabled={polygonDraft.length === 0}
+          >
+            1 点戻す
+          </Button>
+          <Button
+            size="sm"
+            variant="default"
+            color="red"
+            onClick={() => {
+              setPolygonDraft([]);
+              actions.setIsAddingPolygon(false);
+            }}
+          >
+            取消
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
@@ -1029,6 +1196,7 @@ const ZoneItem = ({
         clipHeight={heightPx}
         draggable={!isScaleMode && !isAddingText}
         onClick={(e) => {
+          if (isGhostClick(e.evt)) return;
           if (isScaleMode || isAddingText) return; // Stage 側でハンドリング
           e.cancelBubble = true;
           onSelect(e.evt.shiftKey);
@@ -1092,7 +1260,7 @@ const ZoneItem = ({
             listening={false}
           />
         )}
-        {type?.showName !== false && (
+        {isPlacedZoneNameShown(item, type) && (
           <Text
             text={displayText}
             fill={nameColor}
@@ -1204,6 +1372,7 @@ const TextItem = ({
         fill={item.color}
         draggable={!isScaleMode && !isAddingText}
         onClick={(e) => {
+          if (isGhostClick(e.evt)) return;
           if (isScaleMode || isAddingText) return;
           e.cancelBubble = true;
           onSelect(e.evt.shiftKey);
@@ -1213,7 +1382,9 @@ const TextItem = ({
           e.cancelBubble = true;
           onSelect(false);
         }}
-        onDblClick={handleDblClick}
+        onDblClick={(e) => {
+          if (!isGhostClick(e.evt)) handleDblClick();
+        }}
         onDblTap={handleDblClick}
         onDragMove={(e) =>
           snapNodePosition(e.target, scaleRatio, withSnapInverted(settings, isCtrl(e.evt)))
@@ -1308,6 +1479,14 @@ const PolygonItem = ({
 
   const flatPoints = item.points.flatMap((p) => [p.x * scaleRatio, p.y * scaleRatio]);
   const centroid = polygonCentroid(item.points);
+  // 図面上のラベル（v2.7.0）。カウントも表示する場合はラベルを上、カウントを下に並べる。
+  const labelText = item.showLabel ? (item.label ?? '').trim() : '';
+  const labelFont = item.labelFontSize ?? DEFAULT_POLYGON_LABEL_FONT_PX;
+  const COUNT_FONT = 14;
+  const GAP = 2;
+  const stackH = (labelText ? labelFont : 0) + (item.showCount ? COUNT_FONT : 0) + (labelText && item.showCount ? GAP : 0);
+  const stackTop = centroid.y * scaleRatio - stackH / 2;
+  const labelWidth = Math.max(120, labelText.length * labelFont * 1.1);
 
   return (
     <Group
@@ -1315,7 +1494,7 @@ const PolygonItem = ({
       id={item.id}
       draggable={isSelected && interactive}
       onDragStart={(e) => {
-        if (e.target === groupRef.current) groupDrag?.start(e.target);
+        if (e.target === groupRef.current) groupDrag?.start(e.target, e.evt.altKey);
       }}
       onDragMove={(e) => {
         if (e.target === groupRef.current) groupDrag?.move(e.target, isCtrl(e.evt));
@@ -1358,6 +1537,7 @@ const PolygonItem = ({
         }}
         onClick={(e) => {
           e.cancelBubble = true;
+          if (isGhostClick(e.evt)) return;
           onSelect(e.evt.shiftKey);
         }}
         onTap={(e) => {
@@ -1365,10 +1545,27 @@ const PolygonItem = ({
           onSelect(false);
         }}
       />
+      {labelText && (
+        <Text
+          x={centroid.x * scaleRatio - labelWidth / 2}
+          y={stackTop}
+          width={labelWidth}
+          text={labelText}
+          wrap="none"
+          align="center"
+          fill={item.labelColor ?? '#000000'}
+          stroke="#ffffff"
+          strokeWidth={Math.max(2, labelFont / 7)}
+          fillAfterStrokeEnabled
+          fontStyle="bold"
+          fontSize={labelFont}
+          listening={false}
+        />
+      )}
       {item.showCount && (
         <Text
           x={centroid.x * scaleRatio - 60}
-          y={centroid.y * scaleRatio - 9}
+          y={labelText ? stackTop + labelFont + GAP : centroid.y * scaleRatio - 9}
           width={120}
           text={`${residentCount}人`}
           align="center"

@@ -114,3 +114,6 @@ export const DEFAULT_POLYGON_STYLE = {
   fillOpacity: 0.3,
   showCount: true,
 };
+
+/** ゾーンラベルの既定文字サイズ（px）。 */
+export const DEFAULT_POLYGON_LABEL_FONT_PX = 16;
