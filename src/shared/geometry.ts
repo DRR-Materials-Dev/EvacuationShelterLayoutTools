@@ -96,3 +96,109 @@ export const residentsInPolygon = (
   }
   return { byType, total };
 };
+
+/* ---------- 囲むゾーン・回転（v2.8.0、設計書 §15） ---------- */
+
+const cross = (o: Vec2, a: Vec2, b: Vec2): number => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+/**
+ * 凸包（Andrew の monotone chain）。一直線上の点は除く。3 点未満になる場合はそのまま返す。
+ */
+export const convexHull = (points: Vec2[]): Vec2[] => {
+  const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (pts.length < 3) return pts;
+  const EPS = 1e-12;
+  const lower: Vec2[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= EPS) lower.pop();
+    lower.push(p);
+  }
+  const upper: Vec2[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= EPS) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+};
+
+/**
+ * 凸多角形を外側へ margin だけ広げる（各辺を法線方向へ平行移動し、隣り合う辺の交点を頂点にする）。
+ * 区画の凸包は内角が 90° 以上なので、角の張り出しは最大でも margin×√2 に収まる。
+ */
+export const offsetConvexPolygon = (polygon: Vec2[], margin: number): Vec2[] => {
+  const n = polygon.length;
+  if (n < 3 || margin === 0) return polygon.map((p) => ({ ...p }));
+  const c = polygonCentroid(polygon);
+  // 各辺を外向き法線方向へ動かした直線（点 p と方向 d）
+  const lines = polygon.map((a, i) => {
+    const b = polygon[(i + 1) % n];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    let nx = dy / len;
+    let ny = -dx / len;
+    const mx = (a.x + b.x) / 2 - c.x;
+    const my = (a.y + b.y) / 2 - c.y;
+    if (nx * mx + ny * my < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    return { p: { x: a.x + nx * margin, y: a.y + ny * margin }, d: { x: dx, y: dy } };
+  });
+  // 頂点 i は「辺 i-1」と「辺 i」の交点
+  return polygon.map((_v, i) => {
+    const l1 = lines[(i - 1 + n) % n];
+    const l2 = lines[i];
+    const det = l1.d.x * l2.d.y - l1.d.y * l2.d.x;
+    if (Math.abs(det) < 1e-12) return { x: l2.p.x, y: l2.p.y }; // 平行（凸包では起きない）
+    const t = ((l2.p.x - l1.p.x) * l2.d.y - (l2.p.y - l1.p.y) * l2.d.x) / det;
+    return { x: l1.p.x + l1.d.x * t, y: l1.p.y + l1.d.y * t };
+  });
+};
+
+/** 区画群をすべて囲む凸形のゾーンの頂点（区画の 4 隅の凸包を margin だけ外へ広げる）。 */
+export const hullAroundZones = (
+  zones: PlacedZone[],
+  dims: (zone: PlacedZone) => { width: number; height: number },
+  margin: number,
+): Vec2[] => {
+  const corners = zones.flatMap((z) => {
+    const { width, height } = dims(z);
+    return getZoneCornersMeters(z, width, height);
+  });
+  return offsetConvexPolygon(convexHull(corners), margin).map((p) => ({
+    x: roundMeters(p.x),
+    y: roundMeters(p.y),
+  }));
+};
+
+/** 座標（m）の計算誤差を 1μm 単位で丸める（保存ファイルに 1.7999999999999998 のような値を残さない）。 */
+export const roundMeters = (v: number): number => Math.round(v * 1e6) / 1e6;
+
+/** 角度を [0, 360) に正規化する（小数誤差も丸める）。 */
+export const normalizeDegrees = (deg: number): number => {
+  const r = ((deg % 360) + 360) % 360;
+  const rounded = Math.round(r * 1e6) / 1e6;
+  return rounded === 360 ? 0 : rounded;
+};
+
+/** 点 p を center のまわりに deg 度回転する（画面座標＝y 下向き、Konva と同じ向き）。 */
+export const rotatePoint = (p: Vec2, center: Vec2, deg: number): Vec2 => {
+  const rad = (deg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dx = p.x - center.x;
+  const dy = p.y - center.y;
+  return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos };
+};
+
+/** 区画を center のまわりに deg 度回転したときの位置（左上原点）と角度。 */
+export const rotateZoneAbout = (
+  zone: PlacedZone,
+  center: Vec2,
+  deg: number,
+): { x: number; y: number; rotation: number } => {
+  const o = rotatePoint({ x: zone.x, y: zone.y }, center, deg);
+  return { x: o.x, y: o.y, rotation: normalizeDegrees(zone.rotation + deg) };
+};

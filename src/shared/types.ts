@@ -177,7 +177,14 @@ export type UserSettings = {
     enabled: boolean;
     degrees: number; // 例: 15 = 15° 刻み
   };
+  /** 複数選択した区画を囲むゾーンを作るときの余白（v2.8.0、設計書 §15）。 */
+  zoneHull: {
+    marginMeters: number; // 例: 0.2 = 20cm。0 にすると区画の角が線上に乗り内包判定から外れるため 0.01 以上
+  };
 };
+
+/** 囲むゾーンの余白の下限（m）。区画の角がゾーンの線上に乗らないようにする。 */
+export const ZONE_HULL_MIN_MARGIN = 0.01;
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   snap: {
@@ -187,6 +194,9 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   rotationSnap: {
     enabled: true,
     degrees: 15,
+  },
+  zoneHull: {
+    marginMeters: 0.2,
   },
 };
 

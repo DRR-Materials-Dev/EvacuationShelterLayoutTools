@@ -1,6 +1,6 @@
 import { get, set, del } from 'idb-keyval';
 import type { Floor, ResidentType, UserSettings, ZoneList } from './types.ts';
-import { DEFAULT_USER_SETTINGS } from './types.ts';
+import { DEFAULT_USER_SETTINGS, ZONE_HULL_MIN_MARGIN } from './types.ts';
 import { DEFAULT_RESIDENT_TYPES, DEFAULT_ZONE_LIST } from './constants.ts';
 
 /**
@@ -49,6 +49,7 @@ export const getStoredUserSettings = (): UserSettings => {
 
     const snapRaw = isObject(parsed.snap) ? parsed.snap : {};
     const rotRaw = isObject(parsed.rotationSnap) ? parsed.rotationSnap : {};
+    const hullRaw = isObject(parsed.zoneHull) ? parsed.zoneHull : {};
     return {
       rotationSnap: {
         enabled:
@@ -69,6 +70,12 @@ export const getStoredUserSettings = (): UserSettings => {
           typeof snapRaw.sizeMeters === 'number' && snapRaw.sizeMeters > 0
             ? snapRaw.sizeMeters
             : DEFAULT_USER_SETTINGS.snap.sizeMeters,
+      },
+      zoneHull: {
+        marginMeters:
+          typeof hullRaw.marginMeters === 'number' && hullRaw.marginMeters >= ZONE_HULL_MIN_MARGIN
+            ? hullRaw.marginMeters
+            : DEFAULT_USER_SETTINGS.zoneHull.marginMeters,
       },
     };
   } catch {
