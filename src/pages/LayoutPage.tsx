@@ -565,7 +565,7 @@ const LayoutPage = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <AppHeader title="避難所レイアウト" />
+      <AppHeader title="避難所レイアウト" manualSection="layout" />
       {collab.active && (
         <div
           style={{

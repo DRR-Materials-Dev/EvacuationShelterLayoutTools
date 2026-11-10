@@ -1,5 +1,6 @@
-import { Container, Title, Text, SimpleGrid, Card, Stack, ThemeIcon, Group } from '@mantine/core';
-import { IconLayoutGrid, IconEdit, IconPrinter, type IconProps } from '@tabler/icons-react';
+import { Button, Container, Title, Text, SimpleGrid, Card, Stack, ThemeIcon, Group } from '@mantine/core';
+import { IconBook, IconLayoutGrid, IconEdit, IconPrinter, type IconProps } from '@tabler/icons-react';
+import { manualUrl } from '../shared/manual.ts';
 import { useNavigate } from 'react-router-dom';
 import type { ComponentType } from 'react';
 
@@ -56,6 +57,16 @@ const MenuPage = () => {
           <Text c="dimmed" size="xs" ta="center">
             Ver. {APP_VERSION}
           </Text>
+          <Button
+            component="a"
+            href={manualUrl()}
+            target="_blank"
+            rel="noopener"
+            variant="light"
+            leftSection={<IconBook size={18} />}
+          >
+            使い方マニュアル
+          </Button>
         </Stack>
 
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="lg">

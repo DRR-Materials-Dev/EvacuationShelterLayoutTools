@@ -7,6 +7,7 @@
  *
  * SPA は 127.0.0.1 のローカル HTTP で配信する（理由は static-server.mjs のコメント参照）。
  */
+import { helpMenu, routeWindowOpen } from './window-links.mjs';
 import { app, BrowserWindow, Menu, dialog } from 'electron';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -52,6 +53,10 @@ const createWindow = async () => {
   // ページの <title> でウィンドウタイトルが上書きされないようにする（バージョン表示を残すため）
   win.on('page-title-updated', (e) => e.preventDefault());
 
+  // マニュアル等のアプリ内ページは別ウィンドウ、外部リンクは既定のブラウザで開く（v2.8.0）
+  const localOrigin = `http://127.0.0.1:${server.port}`;
+  routeWindowOpen(win, localOrigin);
+
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
@@ -69,6 +74,7 @@ const createWindow = async () => {
           { role: 'togglefullscreen', label: '全画面表示' },
         ],
       },
+      helpMenu(localOrigin),
     ]),
   );
 

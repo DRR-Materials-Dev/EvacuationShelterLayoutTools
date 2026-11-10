@@ -22,7 +22,9 @@
     "electron:build": "npm run icon && npm run build:collab && electron-builder --win nsis",
     "electron:build:standalone": "npm run icon && npm run build:standalone && electron-builder --win nsis --config electron-builder.standalone.json",
     "electron:build:all": "npm run electron:build && npm run electron:build:standalone",
-    "test": "vitest run"
+    "test": "vitest run",
+    "manual:shots": "node scripts/manual/shots.mjs",
+    "manual:pdf": "node scripts/manual/pdf.mjs"
   },
   "dependencies": {
     "@mantine/core": "^9.1.1",

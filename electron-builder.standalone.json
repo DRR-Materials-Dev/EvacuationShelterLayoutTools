@@ -11,6 +11,7 @@
     "electron/main-standalone.mjs",
     "electron/static-server.mjs",
     "electron/preferred-port.mjs",
+    "electron/window-links.mjs",
     "dist-standalone/**/*",
     "package.json"
   ],

@@ -112,7 +112,7 @@ const PrintPage = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <AppHeader title="区画印刷" />
+      <AppHeader title="区画印刷" manualSection="print" />
       <ScrollArea style={{ flex: 1 }}>
         <Container py="md" size="lg">
           <Stack gap="md">
