@@ -6,6 +6,7 @@
  * 一般利用者がアイコン起動するホスト用アプリ。内部で「同期ハブ＋静的配信」を同一ポートで
  * 起動し、ホスト自身はウィンドウで編集、参加者は表示される URL/QR をブラウザで開く。
  */
+import { helpMenu, routeWindowOpen } from './window-links.mjs';
 import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -75,6 +76,10 @@ const createWindow = async () => {
   // ページの <title> でウィンドウタイトルが上書きされないようにする（バージョン表示を残すため）
   win.on('page-title-updated', (e) => e.preventDefault());
 
+  // マニュアル等のアプリ内ページは別ウィンドウ、外部リンクは既定のブラウザで開く（v2.8.0）
+  const localOrigin = `http://127.0.0.1:${hub.port}`;
+  routeWindowOpen(win, localOrigin);
+
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
@@ -92,6 +97,7 @@ const createWindow = async () => {
           { role: 'togglefullscreen', label: '全画面表示' },
         ],
       },
+      helpMenu(localOrigin),
     ]),
   );
 

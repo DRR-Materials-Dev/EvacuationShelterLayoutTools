@@ -23,6 +23,9 @@
 * **データ保存**:
   * `*.layout.json`: 背景画像・縮尺・区画リスト・配置済みアイテムをすべて含む単一ファイル
   * PNG: 現在の表示状態を画像として保存
+* **囲むゾーンの作成**: 区画を複数選択して「囲むゾーンを作成」を押すと、選んだ区画をすべて囲む凸形のゾーンを作ります（区画の外周からの余白は「設定」で変更、既定 0.2m）。作成後はゾーンと中の区画を選択した状態になります。
+* **ゾーンの回転**: ゾーンを選択すると回転ハンドルが出ます。ゾーンだけを選んでいるときはゾーンだけ、ゾーン内選択（選択中のゾーンをもう一度クリック）のときはゾーンと中の区画を一緒に回します（角度スナップあり）。
+* **元に戻す・やり直し**: Ctrl+Z／Ctrl+Y（Ctrl+Shift+Z）または階層タブ右の「元に戻す」「やり直し」ボタンで、配置・移動・回転・削除・貼り付け・人数入力・階層操作などを取り消せます（最大 100 件）。マルチ操作では自分の操作だけを取り消します。レイアウト読込・区画リストの差し替えをすると履歴は消えます。区画リストの編集は取り消しの対象外です。
 * **永続化**: 配置状態・縮尺・背景画像はブラウザ内に自動保存され、次回起動時に復元されます。
 
 ### 2. 区画エディタ
@@ -64,6 +67,7 @@
 * **UI Components**: Mantine v9
 * **Icons**: Tabler Icons
 * **Canvas Library**: Konva.js (react-konva)
+* **Document Model**: Yjs（レイアウト文書の管理・元に戻す。マルチ操作版では y-websocket で同期）
 * **Storage**:
   * LocalStorage（軽量ステート・ユーザー設定・レイアウト状態・印刷の用紙/縮尺設定）
   * IndexedDB（背景画像・共有区画リスト - `idb-keyval` 使用）
@@ -79,12 +83,15 @@
 | konva / react-konva | MIT | キャンバス描画 |
 | use-image | MIT | konva 用画像ローダー |
 | idb-keyval | Apache-2.0 | IndexedDB ラッパー |
+| yjs | MIT | レイアウト文書の管理・元に戻す／やり直し（全版）、同時編集の同期 |
+| y-websocket / y-protocols | MIT | 同時編集の通信・プレゼンス（コラボ版のみ） |
 | qrcode | MIT | 参加用 URL の QR コード生成（コラボ版のみ） |
 | pdfjs-dist | Apache-2.0 | PDF 図面の読み込み（ページの画像化） |
 | vite | MIT | ビルドツール |
 | typescript | Apache-2.0 | 型システム |
 | @vitejs/plugin-react | MIT | Vite 用 React プラグイン |
 | eslint / typescript-eslint | MIT | リンタ |
+| vitest | MIT | 単体テスト（開発時のみ） |
 
 ## 開発・実行方法
 
@@ -113,6 +120,7 @@ npm run dev
 ```bash
 npm run typecheck        # tsc -b --noEmit
 npm run lint             # eslint .
+npm test                 # vitest（レイアウト文書・元に戻すの単体テスト）
 npm run build            # GitHub Pages 版 → dist/ に生成
 npm run build:collab     # コラボ版 Web アセット → dist-collab/ に生成
 npm run build:standalone # 単体動作版 Web アセット → dist-standalone/ に生成

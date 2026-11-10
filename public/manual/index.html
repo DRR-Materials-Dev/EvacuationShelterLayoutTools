@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>避難所レイアウトツール 使い方マニュアル</title>
+<style>
+  :root {
+    --ink: #1f2933; --muted: #5f6b7a; --line: #d9dee5; --bg: #ffffff; --soft: #f4f6f9;
+    --accent: #1565c0; --accent-soft: #e8f0fb; --warn: #b26a00; --warn-soft: #fff4e0; --mark: #e53935;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; color: var(--ink); background: var(--bg);
+    font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    font-size: 16px; line-height: 1.8;
+  }
+  a { color: var(--accent); }
+  .layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
+  nav.toc {
+    position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+    padding: 20px 16px 40px; border-right: 1px solid var(--line); background: var(--soft); font-size: 14px; line-height: 1.6;
+  }
+  nav.toc .brand { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+  nav.toc .ver { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  nav.toc ol { margin: 0; padding-left: 1.3em; }
+  nav.toc li { margin: 2px 0; }
+  nav.toc ol ol { padding-left: 1.1em; font-size: 13px; }
+  nav.toc a { color: var(--ink); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); text-decoration: underline; }
+  nav.toc .pdf { display: block; margin: 0 0 14px; padding: 8px 10px; border-radius: 8px; background: var(--accent); color: #fff; text-align: center; text-decoration: none; font-weight: 700; }
+  main { padding: 32px 48px 80px; max-width: 1080px; }
+  h1 { font-size: 32px; line-height: 1.3; margin: 0 0 8px; }
+  h2 { font-size: 25px; margin: 56px 0 12px; padding-bottom: 6px; border-bottom: 3px solid var(--accent); }
+  h3 { font-size: 20px; margin: 36px 0 8px; padding-left: 10px; border-left: 5px solid var(--accent); }
+  h4 { font-size: 17px; margin: 24px 0 6px; }
+  p { margin: 8px 0 12px; }
+  .lead { color: var(--muted); font-size: 17px; }
+  figure { margin: 16px 0 24px; }
+  figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  figure.small img { max-width: 520px; }
+  figure.medium img { max-width: 760px; }
+  figcaption { margin-top: 6px; color: var(--muted); font-size: 14px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+  .row figure { margin: 8px 0; }
+  ol.steps { padding-left: 1.6em; }
+  ol.steps > li { margin: 6px 0; }
+  .note, .warn, .tip {
+    margin: 14px 0; padding: 10px 14px; border-radius: 8px; border-left: 5px solid;
+  }
+  .note { background: var(--accent-soft); border-color: var(--accent); }
+  .warn { background: var(--warn-soft); border-color: var(--warn); }
+  .tip { background: #eef7ee; border-color: #2e7d32; }
+  .note b:first-child, .warn b:first-child, .tip b:first-child { margin-right: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 20px; font-size: 15px; }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); }
+  kbd { display: inline-block; padding: 0 6px; border: 1px solid #b8c0cc; border-bottom-width: 2px; border-radius: 4px; background: #fff; font-family: inherit; font-size: 14px; line-height: 1.5; }
+  .num { display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: var(--mark); color: #fff; font-weight: 700; font-size: 14px; line-height: 24px; text-align: center; margin-right: 4px; }
+  .btn { display: inline-block; padding: 0 8px; border: 1px solid #c3cad4; border-radius: 5px; background: #fff; font-size: 14px; line-height: 1.7; white-space: nowrap; }
+  .cover { padding: 8px 0 24px; border-bottom: 1px solid var(--line); }
+  .cover .meta { color: var(--muted); font-size: 14px; }
+  .downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 16px 0; }
+  .downloads a.card { display: block; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; text-decoration: none; color: var(--ink); background: #fff; }
+  .downloads a.card b { display: block; color: var(--accent); }
+  .downloads a.card span { font-size: 13px; color: var(--muted); word-break: break-all; }
+  .print-only { display: none; }
+  .credit { display: flex; align-items: center; gap: 12px; margin-top: 16px; color: var(--muted); font-size: 13px; }
+  .credit img { width: 118px; height: auto; flex: none; }
+  nav.toc .credit { flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 11px; }
+  nav.toc .credit img { width: 96px; box-sizing: content-box; padding: 4px 8px; background: #fff; border: 1px solid var(--line); border-radius: 6px; }
+  @media (max-width: 900px) {
+    .layout { display: block; }
+    nav.toc { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    main { padding: 20px 16px 60px; }
+  }
+  @media print {
+    @page { size: A4; margin: 14mm 13mm 16mm; }
+    body { font-size: 10.5pt; line-height: 1.65; }
+    .layout { display: block; }
+    nav.toc { display: none; }
+    .screen-only { display: none !important; }
+    .print-only { display: block; }
+    main { padding: 0; max-width: none; }
+    h1 { font-size: 24pt; }
+    h2 { font-size: 17pt; margin-top: 0; break-before: page; }
+    h2.no-break { break-before: auto; }
+    h3 { font-size: 13pt; margin-top: 18pt; break-after: avoid; }
+    h4 { break-after: avoid; }
+    figure, table, .note, .warn, .tip { break-inside: avoid; }
+    figure img { box-shadow: none; max-height: 165mm; width: auto; }
+    figure.small img { max-width: 95mm; }
+    figure.medium img { max-width: 135mm; }
+    .row figure img, .row figure.small img, .row figure.medium img { max-width: 100%; }
+    a { color: var(--ink); text-decoration: none; }
+    .cover { min-height: 240mm; border: 0; display: flex; flex-direction: column; justify-content: center; }
+    .cover h1 { font-size: 30pt; }
+    .cover .credit { margin-top: 10mm; font-size: 9pt; }
+    .credit img { width: 31mm; }
+    .print-toc ol { padding-left: 1.4em; }
+    .print-toc li { margin: 1pt 0; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="目次">
+  <div class="brand">避難所レイアウトツール</div>
+  <div class="ver">使い方マニュアル（Ver. 2.8.0）</div>
+  <a class="pdf" href="manual.pdf" download="避難所レイアウトツール_使い方マニュアル_v2.8.0.pdf">PDF 版をダウンロード</a>
+  <ol>
+    <li><a href="#about">このマニュアルについて</a></li>
+    <li><a href="#intro">はじめに</a></li>
+    <li><a href="#menu">メニュー画面</a></li>
+    <li><a href="#layout">避難所レイアウト</a>
+      <ol>
+        <li><a href="#layout-screen">画面の見方</a></li>
+        <li><a href="#layout-flow">基本の流れ</a></li>
+        <li><a href="#floorplan">図面を読み込む</a></li>
+        <li><a href="#scale">縮尺を合わせる</a></li>
+        <li><a href="#blocks">区画を配置する</a></li>
+        <li><a href="#residents">居住者の人数</a></li>
+        <li><a href="#select">選択・コピー・削除</a></li>
+        <li><a href="#zones">ゾーン</a></li>
+        <li><a href="#hull">区画を囲むゾーン</a></li>
+        <li><a href="#rotate">ゾーンの回転</a></li>
+        <li><a href="#text">テキスト</a></li>
+        <li><a href="#floors">階層</a></li>
+        <li><a href="#undo">元に戻す・やり直し</a></li>
+        <li><a href="#save">保存と読み込み</a></li>
+        <li><a href="#zonelist">区画リストの編集</a></li>
+        <li><a href="#settings">設定</a></li>
+      </ol>
+    </li>
+    <li><a href="#editor">区画エディタ</a></li>
+    <li><a href="#print">区画印刷</a></li>
+    <li><a href="#collab">マルチ操作（同時編集）</a></li>
+    <li><a href="#tablet">タブレットで使う</a></li>
+    <li><a href="#faq">困ったとき</a></li>
+    <li><a href="#shortcuts">キー操作の一覧</a></li>
+    <li><a href="#download">PDF 版・最新版の入手先</a></li>
+  </ol>
+  <div class="credit"><img src="img/si-logo.png" alt="スマートインプリメント"><span>Copyright © 2026 Smart Implement Naoyuki Shiba</span></div>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<section class="cover" id="about">
+  <h1>避難所レイアウトツール<br>使い方マニュアル</h1>
+  <p class="lead">施設の図面の上に居住スペースや受付などの区画を並べ、避難所のレイアウトを検討するためのツールです。</p>
+  <p class="meta">対象バージョン：Ver. 2.8.0 ／ 2026 年 11 月</p>
+  <div class="credit"><img src="img/si-logo.png" alt="スマートインプリメント"><span>スマートインプリメント<br>Copyright © 2026 Smart Implement Naoyuki Shiba</span></div>
+  <figure class="screen-only"><img src="img/map-overview.jpg" alt="架空の体育館の図面に区画とゾーンを配置した例"><figcaption>図 0　レイアウトの例（架空の体育館）</figcaption></figure>
+  <div class="print-only">
+    <figure><img src="img/map-overview.jpg" alt="架空の体育館の図面に区画とゾーンを配置した例"><figcaption>図 0　レイアウトの例（架空の体育館）</figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2 id="about-manual">このマニュアルについて</h2>
+  <p>このマニュアルは、避難所の運営担当の方や、訓練・検討会の参加者が、ツールの使い方を一通り身につけるためのものです。画面の写真は、ツールに入っているサンプル「架空の体育館」を使っています。</p>
+  <ul>
+    <li><b>HTML 版</b>（この画面）：ツールの <span class="btn">？</span> ボタンや、メニュー画面の <span class="btn">使い方マニュアル</span> から開けます。</li>
+    <li><b>PDF 版</b>（印刷用）：入手先は <a href="#download">「PDF 版・最新版の入手先」</a> にまとめています。</li>
+  </ul>
+  <div class="print-toc print-only">
+    <h3>目次</h3>
+    <ol>
+      <li>はじめに</li><li>メニュー画面</li><li>避難所レイアウト（画面の見方／基本の流れ／図面／縮尺／区画／居住者／選択・コピー・削除／ゾーン／区画を囲むゾーン／ゾーンの回転／テキスト／階層／元に戻す・やり直し／保存と読み込み／区画リストの編集／設定）</li>
+      <li>区画エディタ</li><li>区画印刷</li><li>マルチ操作（同時編集）</li><li>タブレットで使う</li><li>困ったとき</li><li>キー操作の一覧</li><li>PDF 版・最新版の入手先</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="intro">
+  <h2>1. はじめに</h2>
+  <h3>このツールでできること</h3>
+  <ul>
+    <li>施設の図面（画像または PDF）を読み込み、実際の寸法で区画を並べる</li>
+    <li>区画ごとに、居住者の人数（健常者・要配慮者など）を入れて集計する</li>
+    <li>「居住エリア」などの範囲（ゾーン）を描き、ゾーンごとの人数を数える</li>
+    <li>複数の階層（1F・2F など）を 1 つのレイアウトにまとめる</li>
+    <li>区画の種類（名前・大きさ・色・画像）を自分で作る（区画エディタ）</li>
+    <li>区画を実寸の縮尺で紙に印刷し、机上で並べて検討する（区画印刷）</li>
+    <li>同じ Wi‑Fi の何台かの端末で、1 つのレイアウトを同時に編集する（マルチ操作）</li>
+  </ul>
+
+  <h3>ツールの種類</h3>
+  <table>
+    <tr><th>種類</th><th>使い方</th><th>向いている場面</th></tr>
+    <tr><td>ブラウザ版</td><td>インターネット上のページをブラウザで開く（インストール不要）</td><td>まず試してみたい・一人で検討する</td></tr>
+    <tr><td>単体動作版（避難所レイアウト）</td><td>Windows にインストールして使う。インターネットに接続しなくても動く</td><td>オフラインの端末・一人で検討する</td></tr>
+    <tr><td>コラボ版（避難所レイアウト（コラボ））</td><td>ホスト役の Windows パソコンにだけインストールする。参加者はブラウザで参加</td><td>訓練・検討会で、何人かで同時に編集する</td></tr>
+  </table>
+  <p>どの種類も、操作の方法は同じです。マルチ操作（同時編集）だけはコラボ版で使えます。</p>
+
+  <h3>データの保存について</h3>
+  <ul>
+    <li>作業中のレイアウトは、使っている端末（ブラウザ）の中に<b>自動で保存</b>され、次に開いたときに元の状態に戻ります。</li>
+    <li>別のパソコンに持っていくときや、作業を残しておきたいときは、<span class="btn">レイアウト保存</span> でファイル（<code>.layout.json</code>）に保存してください（<a href="#save">保存と読み込み</a>）。</li>
+  </ul>
+  <div class="warn"><b>注意</b>ブラウザの「閲覧履歴データの削除」などでサイトのデータを消すと、自動保存した内容も消えます。大切なレイアウトは必ずファイルに保存してください。</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="menu">
+  <h2>2. メニュー画面</h2>
+  <p>ツールを開くと、最初にメニュー画面が表示されます。使いたい機能をクリックしてください。</p>
+  <figure><img src="img/menu.jpg" alt="メニュー画面"><figcaption>図 1　メニュー画面（赤枠：使い方マニュアル）</figcaption></figure>
+  <table>
+    <tr><th>機能</th><th>内容</th></tr>
+    <tr><td>避難所レイアウト</td><td>図面の上に区画を配置してレイアウトを検討します（このマニュアルの中心）。</td></tr>
+    <tr><td>区画エディタ</td><td>区画の種類（名前・大きさ・色・画像など）を作り、「区画リスト」として保存します。</td></tr>
+    <tr><td>区画印刷</td><td>区画を実寸の縮尺で印刷するためのページを作ります。</td></tr>
+  </table>
+  <p>各画面の左上の <span class="btn">←</span> でメニューに戻り、<span class="btn">？</span> でその画面の使い方（このマニュアルの該当する章）を開けます。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="layout">
+  <h2>3. 避難所レイアウト</h2>
+
+  <h3 id="layout-screen">3.1 画面の見方</h3>
+  <figure><img src="img/layout-overview.jpg" alt="避難所レイアウトの画面全体"><figcaption>図 2　避難所レイアウトの画面（区画を 1 つ選んだ状態）</figcaption></figure>
+  <table>
+    <tr><th style="width:56px">番号</th><th style="width:180px">名前</th><th>役割</th></tr>
+    <tr><td><span class="num">1</span></td><td>見出し</td><td><span class="btn">←</span> メニューに戻る ／ <span class="btn">？</span> このマニュアルを開く</td></tr>
+    <tr><td><span class="num">2</span></td><td>ツールバー</td><td>図面の読み込み・縮尺・テキスト・ゾーン・保存などの操作</td></tr>
+    <tr><td><span class="num">3</span></td><td>階層タブ</td><td>階層（1F・2F など）の切り替え・追加・名前の変更</td></tr>
+    <tr><td><span class="num">4</span></td><td>編集操作の帯</td><td>元に戻す・やり直し・コピー・貼り付け・削除・選択解除など</td></tr>
+    <tr><td><span class="num">5</span></td><td>区画リスト</td><td>配置できる区画の一覧。ここから図面へドラッグして置きます</td></tr>
+    <tr><td><span class="num">6</span></td><td>図面</td><td>区画・ゾーン・テキストを配置する場所。マウスのホイールで拡大・縮小、何もない所をドラッグで移動</td></tr>
+    <tr><td><span class="num">7</span></td><td>設定パネル</td><td>選んだものの設定（区画なら人数、ゾーンなら色やラベル）</td></tr>
+    <tr><td><span class="num">8</span></td><td>ステータスバー</td><td>操作の結果やヒント、縮尺・表示倍率・配置数・居住者数の合計</td></tr>
+  </table>
+  <figure><img src="img/toolbar-1.jpg" alt="ツールバーの左側"><figcaption>図 3　ツールバー（左側：図面・縮尺・テキスト・ゾーン・居住者・削除）</figcaption></figure>
+  <figure class="medium"><img src="img/toolbar-2.jpg" alt="ツールバーの右側"><figcaption>図 3-2　ツールバー（右側：読み込み・保存・設定）</figcaption></figure>
+  <table>
+    <tr><th style="width:180px">ボタン</th><th>内容</th></tr>
+    <tr><td><span class="btn">施設画像</span></td><td>表示中の階層に、図面の画像（PNG・JPEG など）または PDF を読み込みます</td></tr>
+    <tr><td><span class="btn">縮尺設定</span></td><td>図面上の 2 点と実際の距離から、図面の縮尺を合わせます</td></tr>
+    <tr><td>虫めがね（＋・−）</td><td>図面を拡大・縮小します</td></tr>
+    <tr><td><span class="btn">テキスト</span></td><td>図面に文字を置きます</td></tr>
+    <tr><td><span class="btn">ゾーン</span></td><td>範囲（ゾーン）を描きます</td></tr>
+    <tr><td><span class="btn">ゾーン表示</span></td><td>ゾーンの表示・非表示を切り替えます</td></tr>
+    <tr><td><span class="btn">居住者種類</span></td><td>居住者の種類（健常者・要配慮者など）を設定します</td></tr>
+    <tr><td><span class="btn">選択削除</span> <span class="btn">全削除</span></td><td>選んだものを削除 ／ 表示中の階層の配置物と図面をすべて削除</td></tr>
+    <tr><td><span class="btn">サンプル読込</span></td><td>ツールに入っているサンプルのレイアウトを読み込みます</td></tr>
+    <tr><td><span class="btn">レイアウト読込</span> <span class="btn">レイアウト保存</span></td><td>レイアウトのファイル（<code>.layout.json</code>）を読み込む ／ 保存する</td></tr>
+    <tr><td><span class="btn">画像保存</span></td><td>表示中の図面を PNG 画像で保存します（資料の作成に）</td></tr>
+    <tr><td><span class="btn">設定</span></td><td>吸着（スナップ）や角度の刻みなどの設定（<a href="#settings">設定</a>）</td></tr>
+  </table>
+  <div class="tip"><b>ヒント</b>画面の幅が狭いときは、ツールバーを左右にスクロールすると隠れているボタンが出てきます。</div>
+
+  <h3 id="layout-flow">3.2 基本の流れ</h3>
+  <ol class="steps">
+    <li><span class="btn">施設画像</span> で施設の図面を読み込む（<a href="#floorplan">3.3</a>）</li>
+    <li><span class="btn">縮尺設定</span> で図面の縮尺を合わせる（<a href="#scale">3.4</a>）</li>
+    <li>左の区画リストから、居住スペースや受付などを図面へドラッグして置く（<a href="#blocks">3.5</a>）</li>
+    <li>区画を選んで、居住者の人数を入れる（<a href="#residents">3.6</a>）</li>
+    <li>必要に応じて、ゾーンで「居住エリア」などの範囲を作る（<a href="#zones">3.8</a>）</li>
+    <li><span class="btn">レイアウト保存</span> でファイルに保存する（<a href="#save">3.14</a>）</li>
+  </ol>
+  <div class="tip"><b>まず触ってみるには</b><span class="btn">サンプル読込</span> で「架空の体育館」を読み込むと、図面と縮尺が設定済みの状態から始められます。</div>
+
+  <h3 id="floorplan">3.3 図面を読み込む</h3>
+  <ol class="steps">
+    <li>図面を入れたい階層のタブ（1F など）を選びます。</li>
+    <li><span class="btn">施設画像</span> を押し、図面のファイルを選びます。画像（PNG・JPEG など）と PDF に対応しています。</li>
+    <li>画像の場合は、そのまま図面として読み込まれます。</li>
+  </ol>
+  <h4>PDF の図面を読み込む</h4>
+  <p>PDF を選ぶと、次の画面が開きます。読み込むページや、向き・切り抜く範囲を決めてから <span class="btn">この階層の図面として読み込む</span> を押してください。</p>
+  <figure><img src="img/pdf-import.jpg" alt="PDF から図面を読み込む画面"><figcaption>図 4　PDF から図面を読み込む画面</figcaption></figure>
+  <ul>
+    <li><b>ページ</b>：複数ページの PDF では、ページを送って選びます。1 回に読み込めるのは 1 ページで、表示中の階層に入ります。別のページは、別の階層で改めて読み込みます。</li>
+    <li><b>解像度</b>：画像にするときの大きさ（長辺 2000／3000／4000 ピクセル）。細かい図面ほど大きくします（既定 3000）。</li>
+    <li><b>回転</b>：90° 単位の回転と、±45° の傾きの補正ができます。</li>
+    <li><b>トリミング</b>：プレビューの上をドラッグすると、その範囲だけを読み込みます。</li>
+  </ul>
+  <p>スキャナで取り込んだ PDF（複合機の白黒スキャンなど）も読み込めます。</p>
+
+  <h3 id="scale">3.4 縮尺を合わせる</h3>
+  <p>区画を実際の大きさで置くために、図面の縮尺を合わせます。図面の中で、長さの分かっている 2 点（寸法線の両端や、柱と柱など）を使います。</p>
+  <ol class="steps">
+    <li><span class="btn">縮尺設定</span> を押します（ボタンが「縮尺設定中…」に変わります）。</li>
+    <li>図面上の 1 点目をクリックし、続けて 2 点目をクリックします。</li>
+    <li>開いた画面に、2 点の間の<b>実際の距離</b>と単位（m または cm）を入れて <span class="btn">適用</span> を押します。</li>
+  </ol>
+  <div class="row">
+    <figure><img src="img/scale-point.jpg" alt="縮尺設定で 1 点目をクリックしたところ"><figcaption>図 5　1 点目をクリックしたところ（サンプルの図面の下にある 50m の線の左端）</figcaption></figure>
+    <figure><img src="img/scale-modal.jpg" alt="縮尺の設定画面"><figcaption>図 6　実際の距離を入れる</figcaption></figure>
+  </div>
+  <div class="tip"><b>ヒント</b>2 点の間が長いほど、縮尺は正確になります。図面の端から端までの寸法を使うのがおすすめです。</div>
+
+  <h3 id="blocks">3.5 区画を配置する</h3>
+  <div class="row">
+    <figure><img src="img/palette.jpg" alt="区画リスト"><figcaption>図 7　区画リスト</figcaption></figure>
+    <div>
+      <ol class="steps">
+        <li>左の区画リストから、置きたい区画（「居住スペース(小)」など）を選びます。</li>
+        <li>そのまま図面の上へ<b>ドラッグ</b>し、置きたい場所で離します。</li>
+      </ol>
+      <p>区画は、区画リストに書かれた実際の大きさ（例：1m × 2m）で置かれます。</p>
+      <p>区画リストの上の <span class="btn">編集</span> <span class="btn">読込み</span> <span class="btn">初期化</span> で、区画の種類の編集・別の区画リストの読み込み・既定に戻すができます（<a href="#zonelist">3.15</a>）。</p>
+    </div>
+  </div>
+  <h4>移動・回転・大きさの変更</h4>
+  <figure class="medium"><img src="img/block-selected.jpg" alt="区画を選んだところ"><figcaption>図 8　区画を選んだところ（区画の上に回転用のつまみが出る。大きさを変えてよい区画では四隅にもつまみが出る）</figcaption></figure>
+  <ul>
+    <li><b>移動</b>：区画をドラッグします。</li>
+    <li><b>回転</b>：区画をクリックして選び、上に出る小さな四角のつまみを回します。15° ごとに止まります（<a href="#settings">設定</a>で変えられます）。</li>
+    <li><b>大きさの変更</b>：四隅のつまみをドラッグします（大きさを変えてよい区画だけ）。</li>
+  </ul>
+  <div class="note"><b>吸着（スナップ）</b>区画の位置と大きさは、10cm 刻みの格子に吸い付きます。<kbd>Ctrl</kbd> を押しながら動かすと、一時的に吸着の入・切が逆になります。刻みは <a href="#settings">設定</a> で変えられます。</div>
+
+  <h3 id="residents">3.6 居住者の人数</h3>
+  <p>居住スペースなどの区画を選ぶと、右側に区画のパネルが出ます。居住者の種類ごとに人数を入れてください。</p>
+  <div class="row">
+    <figure><img src="img/selection-panel.jpg" alt="区画のパネル"><figcaption>図 9　区画のパネル（人数の入力・区画名の表示・削除）</figcaption></figure>
+    <div>
+      <ul>
+        <li>人数は種類ごとに入れ、合計が自動で出ます。</li>
+        <li>入れた人数は、図面上の区画にも表示されます。</li>
+        <li><b>区画名を図面に表示</b>：この区画だけ、区画名の表示・非表示を切り替えます。</li>
+        <li><span class="btn">この区画を削除</span>：区画を削除します。</li>
+      </ul>
+      <p>画面下のステータスバーに、<b>表示中の階層</b>と<b>全階層</b>の居住者数の合計が出ます。</p>
+    </div>
+  </div>
+  <figure class="medium"><img src="img/statusbar.jpg" alt="ステータスバーの右側"><figcaption>図 10　ステータスバーの右側（縮尺・表示倍率・配置数・居住者数）</figcaption></figure>
+  <h4>居住者の種類を設定する</h4>
+  <p><span class="btn">居住者種類</span> で、種類の名前と色を変えたり、種類を足したりできます。最初は「健常者・要配慮者・重症者/重病人・運営/自治体職員・ボランティア」の 5 種類です。</p>
+  <figure class="medium"><img src="img/resident-types.jpg" alt="居住者種類の設定"><figcaption>図 11　居住者種類の設定（サンプルでは「帰宅困難者」を 1 つ足しています）</figcaption></figure>
+  <div class="warn"><b>注意</b>種類を削除すると、全階層の区画から、その種類の人数も消えます。</div>
+
+  <h3 id="select">3.7 選択・コピー・削除</h3>
+  <h4>複数の区画を選ぶ</h4>
+  <ul>
+    <li><kbd>Shift</kbd> を押しながら区画をクリックすると、選んだ区画に足したり外したりできます。</li>
+    <li><kbd>Shift</kbd> を押しながら、図面の何もない所からドラッグすると、四角で囲んだ区画をまとめて選べます。</li>
+    <li>タブレットでは、編集操作の帯の <span class="btn">複数選択</span> を ON にしてからタップします。</li>
+  </ul>
+  <div class="row">
+    <figure><img src="img/multi-select.jpg" alt="区画を複数選んだところ"><figcaption>図 12　区画を 8 つ選んだところ</figcaption></figure>
+    <figure><img src="img/multi-panel.jpg" alt="複数選択のパネル"><figcaption>図 13　複数選択のパネル</figcaption></figure>
+  </div>
+  <p>複数の区画を選んだまま区画をドラッグすると、まとめて動きます。複数選択のパネルでは、区画名の表示の一括切り替え・まとめて削除・<a href="#hull">区画を囲むゾーンの作成</a>ができます。</p>
+  <h4>コピー・貼り付け・削除</h4>
+  <figure><img src="img/edit-bar.jpg" alt="編集操作の帯"><figcaption>図 14　編集操作の帯（階層タブの右側）</figcaption></figure>
+  <table>
+    <tr><th style="width:200px">操作</th><th>ボタン</th><th>キー</th></tr>
+    <tr><td>元に戻す ／ やり直し</td><td><span class="btn">元に戻す</span> <span class="btn">やり直し</span></td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> ／ <kbd>Ctrl</kbd>+<kbd>Y</kbd></td></tr>
+    <tr><td>コピー</td><td><span class="btn">コピー</span></td><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td></tr>
+    <tr><td>貼り付け</td><td><span class="btn">貼り付け</span></td><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td></tr>
+    <tr><td>削除</td><td><span class="btn">削除</span></td><td><kbd>Delete</kbd></td></tr>
+    <tr><td>選択解除</td><td><span class="btn">選択解除</span></td><td><kbd>Esc</kbd></td></tr>
+  </table>
+  <ul>
+    <li>貼り付けると、元の位置から少し右下にずれた所に置かれます。人数もそのままコピーされます。</li>
+    <li>コピーしたものは、別の階層にも貼り付けられます。</li>
+  </ul>
+
+  <h3 id="zones">3.8 ゾーン</h3>
+  <p>ゾーンは、「居住エリアA」「要配慮者エリア」のような<b>範囲</b>です。色の付いた多角形で表示され、ゾーンの中に完全に収まっている区画の人数を数えて表示します。</p>
+  <h4>ゾーンを描く</h4>
+  <ol class="steps">
+    <li><span class="btn">ゾーン</span> を押します（「ゾーン作図中…」に変わります）。</li>
+    <li>図面上で、範囲の角を 1 つずつクリックします。</li>
+    <li>最初の点をもう一度クリックするか、ダブルクリックするか、左下の <span class="btn">確定</span> を押すと完成します（3 点以上）。</li>
+  </ol>
+  <div class="row">
+    <figure><img src="img/zone-drawing.jpg" alt="ゾーンを描いているところ"><figcaption>図 15　4 つの角をクリックしたところ</figcaption></figure>
+    <figure><img src="img/zone-drawing-buttons.jpg" alt="ゾーン作図のボタン"><figcaption>図 16　作図中は図面の左下にボタンが出る（確定／1 点戻す／取消）</figcaption></figure>
+  </div>
+  <p>描くのをやめるときは <span class="btn">取消</span> か <kbd>Esc</kbd>、置いた点を 1 つ戻すときは <span class="btn">1 点戻す</span> です。</p>
+  <h4>ゾーンの設定</h4>
+  <p>ゾーンをクリックして選ぶと、右側にゾーンの設定が出ます。</p>
+  <div class="row">
+    <figure><img src="img/zone-selected.jpg" alt="ゾーンを選んだところ"><figcaption>図 17　ゾーンを選んだところ（角の丸いつまみで形を変えられる）</figcaption></figure>
+    <figure><img src="img/polygon-panel.jpg" alt="ゾーン設定のパネル"><figcaption>図 18　ゾーン設定</figcaption></figure>
+  </div>
+  <ul>
+    <li><b>ラベル</b>：ゾーンの名前。<b>ラベルを図面に表示</b> を ON にすると図面に出ます（文字の大きさ・色も変えられます）。</li>
+    <li><b>形を変える</b>：ゾーンの角の丸いつまみをドラッグします。</li>
+    <li><b>移動</b>：ゾーンをドラッグすると、ゾーンに収まっている区画も一緒に動きます。ゾーンだけを動かしたいときは、<kbd>Alt</kbd> を押しながらドラッグするか、<b>ゾーンだけ移動（中の区画は動かさない）</b> を ON にします。</li>
+    <li><b>ゾーン内の区画名</b>：ゾーンに収まっている区画の区画名を、まとめて表示・非表示にします。</li>
+    <li><b>枠線・塗りつぶし</b>：線の種類（実線・破線・点線）・色・太さ、塗りの色と濃さ。</li>
+    <li><b>カウントを表示</b>：ゾーンの中の居住者数を図面に表示します。</li>
+  </ul>
+  <h4>ゾーン内選択（ゾーンと中の区画をまとめて選ぶ）</h4>
+  <p>選んでいるゾーンを<b>もう一度クリック</b>すると、ゾーンに完全に収まっている区画もまとめて選ばれます（ゾーン内選択）。もう一度クリックすると、ゾーンだけの選択に戻ります。</p>
+  <figure class="medium"><img src="img/zone-inner.jpg" alt="ゾーン内選択"><figcaption>図 19　ゾーン内選択（枠が太くなり、中の区画も選ばれる）</figcaption></figure>
+  <figure><img src="img/zone-hint.jpg" alt="ゾーンを選んだときのヒント"><figcaption>図 20　ゾーンを選ぶと、ステータスバーに操作のヒントが出る</figcaption></figure>
+  <div class="note"><b>ゾーンの中の区画を 1 つだけ選びたいとき</b>ゾーンは区画の上に重なっているため、ゾーンの中の区画をクリックするとゾーンが選ばれます。区画を 1 つずつ選ぶときは、<span class="btn">ゾーン表示</span> でゾーンを非表示にしてください。</div>
+
+  <h3 id="hull">3.9 区画を囲むゾーンを作る</h3>
+  <p>並べた区画を後からゾーンにまとめたいときは、区画を選んでボタンを押すだけで、それらを囲むゾーンを作れます。</p>
+  <ol class="steps">
+    <li>ゾーンにまとめたい区画を、<kbd>Shift</kbd>+クリックなどで複数選びます（図 12）。</li>
+    <li>右の複数選択のパネルで <span class="btn">囲むゾーンを作成</span> を押します（図 13）。</li>
+    <li>選んだ区画をすべて囲む、凸形のゾーンができます。作ったあとは、ゾーンと中の区画を選んだ状態（ゾーン内選択）になります。</li>
+  </ol>
+  <figure class="medium"><img src="img/hull-created.jpg" alt="区画を囲むゾーンを作ったところ"><figcaption>図 21　8 つの区画を囲むゾーンができたところ</figcaption></figure>
+  <figure><img src="img/hull-status.jpg" alt="作成後のステータスバー"><figcaption>図 22　ステータスバーに、囲んだ区画の数と余白が出る</figcaption></figure>
+  <ul>
+    <li>区画の外周からゾーンの線までの<b>余白</b>は、最初は 0.2m です。<a href="#settings">設定</a> の「囲むゾーンの余白」で変えられます（0.01m 以上）。</li>
+    <li>ゾーンの角は格子に吸着しません。他のゾーンや区画に吸い付くこともありません。</li>
+    <li>できたゾーンの色やラベルは、ふつうのゾーンと同じように設定できます。</li>
+    <li>選んでいなかった区画でも、ゾーンに完全に収まっていればゾーン内選択に含まれます。</li>
+  </ul>
+
+  <h3 id="rotate">3.10 ゾーンを回転する</h3>
+  <p>ゾーンを選ぶと、ゾーンの上に回転用の丸いつまみが出ます。つまみを回すと、ゾーンが回転します。</p>
+  <table>
+    <tr><th style="width:220px">選び方</th><th>回るもの</th></tr>
+    <tr><td>ゾーンだけを選ぶ（1 回クリック）</td><td>ゾーンだけ。中の区画は動きません</td></tr>
+    <tr><td>ゾーン内選択（もう一度クリック）</td><td>ゾーンと中の区画が一緒に回ります。区画はゾーンに収まったままです</td></tr>
+  </table>
+  <figure class="medium"><img src="img/zone-rotating.jpg" alt="ゾーンと中の区画を回しているところ"><figcaption>図 23　ゾーン内選択のまま回しているところ（中の区画も一緒に回る）</figcaption></figure>
+  <ul>
+    <li>区画と同じく 15° ごとに止まります。<kbd>Ctrl</kbd> を押しながら回すと、止まる・止まらないが逆になります。</li>
+    <li>回転の中心は、回転の枠（点線）の中心です。</li>
+    <li>回したあと、元に戻す 1 回で、ゾーンと区画がまとめて回転前に戻ります。</li>
+  </ul>
+
+  <h3 id="text">3.11 テキスト</h3>
+  <ol class="steps">
+    <li><span class="btn">テキスト</span> を押し、文字を置きたい場所をクリックします。</li>
+    <li>開いた画面で、文字・大きさ・色を決めて追加します。</li>
+  </ol>
+  <div class="row">
+    <figure><img src="img/text-modal.jpg" alt="テキストの追加"><figcaption>図 24　テキストの追加</figcaption></figure>
+    <figure><img src="img/text-on-map.jpg" alt="図面に置いたテキスト"><figcaption>図 25　図面に置いたテキスト（「↓ 玄関から入場」など）</figcaption></figure>
+  </div>
+  <p>置いたテキストはドラッグで動かせます。<b>ダブルクリック</b>で文字を直せます。選ぶと、回転と大きさの変更もできます。</p>
+
+  <h3 id="floors">3.12 階層</h3>
+  <p>体育館の 1 階と 2 階、校舎の各階のように、1 つのレイアウトに複数の階層を持てます。階層ごとに、図面・縮尺・配置物が別になります。</p>
+  <div class="row">
+    <figure><img src="img/floor-menu.jpg" alt="階層のメニュー"><figcaption>図 26　表示中の階層のタブの ⋮ から開く操作メニュー</figcaption></figure>
+    <div>
+      <figure class="small"><img src="img/floor-tabs.jpg" alt="階層タブ"><figcaption>図 26-2　階層タブ（1F・2F と ＋）</figcaption></figure>
+      <ul>
+        <li><b>切り替え</b>：階層のタブ（1F・2F）をクリックします。</li>
+        <li><b>追加</b>：<span class="btn">＋</span> を押します。</li>
+        <li><b>名前の変更・並べ替え・削除</b>：表示中の階層のタブの <span class="btn">⋮</span> から選びます。</li>
+      </ul>
+      <p>ステータスバーの「居住者数（全体）」は、全階層の合計です。</p>
+    </div>
+  </div>
+
+  <h3 id="undo">3.13 元に戻す・やり直し</h3>
+  <p>操作を間違えたときは、<span class="btn">元に戻す</span>（<kbd>Ctrl</kbd>+<kbd>Z</kbd>）で 1 つ前の状態に戻せます。戻しすぎたときは <span class="btn">やり直し</span>（<kbd>Ctrl</kbd>+<kbd>Y</kbd> または <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>）です。</p>
+  <figure><img src="img/undo.jpg" alt="編集操作の帯の元に戻す・やり直し"><figcaption>図 27　編集操作の帯の左端に「元に戻す」「やり直し」がある</figcaption></figure>
+  <ul>
+    <li>配置・移動・回転・大きさの変更・削除・貼り付け・人数・ゾーン・テキスト・図面・縮尺・階層・居住者種類の操作を、100 回分まで戻せます。</li>
+    <li>戻すと、その操作をした階層に切り替わり、そのときに選んでいたものが選ばれた状態になります。</li>
+    <li>人数の入力のように続けて行った入力は、まとめて 1 回で戻ります。</li>
+    <li>マルチ操作では、<b>自分の操作だけ</b>が戻ります。他の人の変更は戻りません。</li>
+  </ul>
+  <div class="warn"><b>戻せない操作</b>
+    <ul style="margin:4px 0 0">
+      <li>レイアウトの読み込み・サンプルの読み込み・区画リストの読み込みや初期化（これらを行うと、それまでの履歴も消えます）</li>
+      <li>区画リストの編集（区画の追加・編集の画面を開いている間は、元に戻す・やり直しは使えません）</li>
+      <li>ページの再読み込みやツールの再起動の前の操作</li>
+    </ul>
+  </div>
+
+  <h3 id="save">3.14 保存と読み込み</h3>
+  <h4>レイアウトをファイルに保存する</h4>
+  <p><span class="btn">レイアウト保存</span> を押し、ファイル名を入れて保存します。全階層の図面・縮尺・配置物・人数と、区画リスト・居住者種類がまとめて 1 つのファイル（<code>.layout.json</code>）に入ります。</p>
+  <figure class="small"><img src="img/save-modal.jpg" alt="レイアウトの保存"><figcaption>図 28　レイアウトを保存</figcaption></figure>
+  <h4>ファイルを読み込む</h4>
+  <p><span class="btn">レイアウト読込</span> で、保存したファイルを選びます。今のレイアウトは読み込んだ内容に置き換わります（元に戻すでは戻せません）。</p>
+  <h4>サンプルを読み込む</h4>
+  <div class="row">
+    <figure class="small"><img src="img/sample-menu.jpg" alt="サンプル読込のメニュー"><figcaption>図 29　サンプル読込</figcaption></figure>
+    <p><span class="btn">サンプル読込</span> から「架空の体育館」「架空の公民館」を選ぶと、図面と縮尺が設定されたレイアウトを読み込めます。練習や説明に使えます。</p>
+  </div>
+  <h4>画像として保存する</h4>
+  <p><span class="btn">画像保存</span> で、表示中の階層の図面を PNG 画像として保存できます。報告資料や掲示物に貼るときに使います。</p>
+  <h4>自動保存</h4>
+  <p>作業中の内容は、端末の中に自動で保存されます。ツールを閉じても、次に開いたときに続きから作業できます（<a href="#intro">はじめに</a>の注意もお読みください）。</p>
+
+  <h3 id="zonelist">3.15 区画リストの編集</h3>
+  <p>区画リストは、配置できる区画の種類の一覧です。区画リストの上の <span class="btn">編集</span> を押すと、レイアウトの画面のまま、区画の追加・編集ができます。</p>
+  <figure><img src="img/zone-editor-modal.jpg" alt="区画の追加・編集"><figcaption>図 30　区画の追加・編集（項目の意味は「4. 区画エディタ」と同じ）</figcaption></figure>
+  <ul>
+    <li>編集して閉じると、区画リストに反映されます。共有の区画リストとして保存しておけば、次回も使えます。</li>
+    <li><span class="btn">読込み</span>：区画リストのファイル（<code>.list.json</code>）を読み込みます。<span class="btn">初期化</span>：既定の区画リスト（標準区画リスト／自治体研究会用区画リスト）に戻します。</li>
+  </ul>
+  <div class="warn"><b>注意</b>区画リストを読み込んだり初期化したりすると、区画の種類が変わるため、全階層の配置物が消えます。また、区画リストの編集は元に戻すで取り消せません。</div>
+
+  <h3 id="settings">3.16 設定</h3>
+  <div class="row">
+    <figure><img src="img/settings-modal.jpg" alt="ユーザー設定"><figcaption>図 31　ユーザー設定</figcaption></figure>
+    <table>
+      <tr><th>項目</th><th>内容（最初の値）</th></tr>
+      <tr><td>スナップ</td><td>区画の位置・大きさを格子に吸着させる（入・10cm 刻み）</td></tr>
+      <tr><td>角度スナップ</td><td>区画・テキスト・ゾーンを回すときに、決まった角度で止める（入・15° 刻み）</td></tr>
+      <tr><td>囲むゾーンの余白</td><td>区画を囲むゾーンを作るときの余白（0.2m）</td></tr>
+    </table>
+  </div>
+  <p>設定は端末ごとに保存され、すべての機能（区画エディタなど）に反映されます。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="editor">
+  <h2>4. 区画エディタ</h2>
+  <p>区画の種類（居住スペース・受付・物資配布スペースなど）を作り、まとめて「区画リスト」として保存します。メニュー画面の <span class="btn">区画エディタ</span> から開きます。</p>
+  <figure><img src="img/editor.jpg" alt="区画エディタの画面"><figcaption>図 32　区画エディタ（左：区画の一覧、右：選んだ区画の設定）</figcaption></figure>
+  <figure><img src="img/editor-detail.jpg" alt="区画の設定"><figcaption>図 33　区画を選んだところ</figcaption></figure>
+  <h3>区画ごとに設定できること</h3>
+  <ul>
+    <li><b>名前・大きさ</b>（m）・<b>色</b>・<b>大きさを変えてよいか</b></li>
+    <li><b>区画表示名</b>：図面に出す名前（区画名と別にもできます）・文字の色と大きさ・位置</li>
+    <li><b>枠線</b>：表示の有無・色・太さ（白っぽい区画の輪郭を見やすくするため）</li>
+    <li><b>画像</b>：区画に重ねる画像（おすすめ：512×512 ピクセル・200KB 以下）と、その表示のしかた（区画に合わせる／縦横比を保つ／縮尺を指定）・回転</li>
+  </ul>
+  <h3>区画リストの保存</h3>
+  <ul>
+    <li>保存すると、区画リストのファイル（<code>.list.json</code>）がダウンロードされ、同時にこの端末の「共有の区画リスト」も更新されます。避難所レイアウトでは、この共有の区画リストが使われます。</li>
+    <li>ファイルの読み込み・新規作成・既定に戻す（標準区画リスト／自治体研究会用区画リスト）もできます。</li>
+    <li>保存しないまま画面を離れようとすると、確認が出ます。</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="print">
+  <h2>5. 区画印刷</h2>
+  <p>区画を実寸の縮尺で印刷し、紙の図面の上に並べて検討するためのページを作ります。メニュー画面の <span class="btn">区画印刷</span> から開きます。</p>
+  <figure><img src="img/print.jpg" alt="区画印刷の画面"><figcaption>図 34　区画印刷</figcaption></figure>
+  <ol class="steps">
+    <li><b>区画リスト</b>を選びます（共有の区画リスト／ファイルから読み込み／既定）。</li>
+    <li><b>用紙</b>（A3・A4・B5・自由な大きさ）と向き・余白を決めます。</li>
+    <li><b>縮尺</b>を、「図面上の長さ」と「印刷したときの長さ」で決めます（例：図面上 1m を 1cm で印刷）。</li>
+    <li>区画ごとに<b>印刷する枚数</b>を決めます。</li>
+    <li><b>並べ方</b>（そのまま敷き詰める／同じ種類をまとめる／1 種類 1 ページ）を選び、印刷用のページを作ります。</li>
+    <li>保存された HTML ファイルをブラウザで開き、<kbd>Ctrl</kbd>+<kbd>P</kbd> で印刷します。</li>
+  </ol>
+  <div class="note"><b>参考</b>用紙に収まらない大きさの区画があるときは、一覧が表示され、ページは作られません。縮尺か用紙を変えてください。各ページの上には区画リスト名と縮尺、下にはページ番号が入ります。</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="collab">
+  <h2>6. マルチ操作（同時編集）</h2>
+  <p>コラボ版を使うと、同じ Wi‑Fi（LAN）につないだ何台かの端末で、1 つのレイアウトを同時に編集できます。訓練や検討会で、グループで話し合いながら配置を決めるときに便利です。</p>
+  <h3>準備（ホスト役の 1 台だけ）</h3>
+  <ol class="steps">
+    <li>ホスト役の Windows パソコンに、コラボ版のインストーラ（<code>EvacuationShelterLayout-Collab-Setup-…exe</code>）でインストールします。</li>
+    <li>「避難所レイアウト（コラボ）」を起動します。初回はファイアウォールの確認が出るので、<b>プライベートネットワーク</b>で許可してください。</li>
+    <li>レイアウトの画面が開きます。上部に、マルチ操作の状態が表示されます。</li>
+  </ol>
+  <figure><img src="img/collab-banner.jpg" alt="マルチ操作の状態表示"><figcaption>図 35　マルチ操作の状態（ルーム・役割・接続状態）</figcaption></figure>
+  <figure class="small"><img src="img/collab-banner-buttons.jpg" alt="表示名・色と参加者を招待のボタン"><figcaption>図 35-2　状態表示の右端のボタン（表示名・色／参加者を招待）</figcaption></figure>
+  <h3>参加者を招待する</h3>
+  <ol class="steps">
+    <li>ホストの画面の <span class="btn">参加者を招待（URL・QR）</span> を押します。</li>
+    <li>「ネットワーク」で、<b>参加者と同じ Wi‑Fi のアドレス</b>を選びます。</li>
+    <li>参加者は、表示された URL をブラウザで開くか、QR コードをタブレットのカメラで読み取ります。</li>
+  </ol>
+  <figure class="medium"><img src="img/collab-invite.jpg" alt="参加者を招待する画面"><figcaption>図 36　参加者を招待（アドレスは例です）</figcaption></figure>
+  <h3>表示名と色</h3>
+  <div class="row">
+    <figure class="small"><img src="img/collab-presence.jpg" alt="表示名・色の変更"><figcaption>図 37　表示名・色の変更</figcaption></figure>
+    <p>画面上部の <span class="btn">表示名・色</span> で、自分の名前と色を決めます。他の人の画面には、あなたのカーソルが色付きの点と名前で、選んでいるものが色付きの点線の丸で表示されます。</p>
+  </div>
+  <figure class="medium"><img src="img/collab-guest.jpg" alt="参加者の画面に見えるホストのカーソルと選択"><figcaption>図 38　参加者の画面（ホスト「本部（ホスト）」のカーソルと、ホストが選んでいる 2 つの区画の点線の丸が見える）</figcaption></figure>
+  <h3>同時編集のきまり</h3>
+  <ul>
+    <li>全階層の図面・縮尺・区画・ゾーン・テキスト・人数・居住者種類・区画リストが、全員に反映されます。</li>
+    <li>表示中の階層・選択・拡大率は、人それぞれです。</li>
+    <li>図面・レイアウト・サンプルの読み込みは、ホストだけができます。</li>
+    <li>元に戻すでは、自分の操作だけが戻ります。ホストがレイアウトを読み込むと、全員の履歴が消えます。</li>
+    <li>ホストと参加者は、<b>同じバージョン</b>のツールを使ってください。</li>
+  </ul>
+  <div class="warn"><b>セキュリティについて（必ずお読みください）</b>
+    <ul style="margin:4px 0 0">
+      <li>通信は暗号化されていません。<b>信頼できる閉じた LAN の中だけ</b>で使い、共用の Wi‑Fi やゲスト用のネットワークでは使わないでください。</li>
+      <li>URL を知っている人は誰でも、レイアウトを見たり書き換えたりできます。</li>
+      <li>実在の施設の機微な図面や、個人が特定できる情報は扱わないでください。</li>
+    </ul>
+  </div>
+  <h3>参加者がつながらないとき</h3>
+  <ol>
+    <li>招待の画面で、参加者と<b>同じ Wi‑Fi（または有線 LAN）のアドレス</b>を選んでいるか確かめます。</li>
+    <li>ファイアウォールやセキュリティソフト（ESET など）が、受信をブロックしていないか確かめます。セキュリティソフトに、アプリの受信の許可を追加してください。</li>
+    <li>確かめるときは、ping ではなく、参加用の URL をブラウザで開いて試してください。</li>
+  </ol>
+</section>
+
+<!-- ============================================================ -->
+<section id="tablet">
+  <h2>7. タブレットで使う</h2>
+  <p>iPad などのタブレットでも、ブラウザ版や、マルチ操作の参加者として使えます。キーボードの代わりに、画面のボタンを使います。</p>
+  <figure><img src="img/tablet.jpg" alt="タブレットの幅で表示した画面"><figcaption>図 39　タブレットの幅で表示したところ</figcaption></figure>
+  <table>
+    <tr><th style="width:220px">操作</th><th>タブレットでのやり方</th></tr>
+    <tr><td>区画を置く</td><td>区画リストの区画を指で押さえたまま、図面の上へ動かして離す</td></tr>
+    <tr><td>拡大・縮小 ／ 図面の移動</td><td>2 本の指で広げる・つまむ ／ 何もない所を 1 本の指でなぞる</td></tr>
+    <tr><td>複数選択（Shift の代わり）</td><td>編集操作の帯の <span class="btn">複数選択</span> を ON にしてタップ</td></tr>
+    <tr><td>ゾーンだけ移動（Alt の代わり）</td><td><span class="btn">ゾーンだけ移動</span> を ON にしてドラッグ</td></tr>
+    <tr><td>元に戻す・コピー・貼り付け・削除・選択解除</td><td>編集操作の帯のボタン</td></tr>
+    <tr><td>ゾーンの作図の確定</td><td>ダブルタップ、または左下の <span class="btn">確定</span></td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="faq">
+  <h2>8. 困ったとき</h2>
+  <table>
+    <tr><th style="width:280px">こんなとき</th><th>こうしてください</th></tr>
+    <tr><td>区画が小さすぎる・大きすぎる</td><td>縮尺が合っていません。<a href="#scale">縮尺を合わせる</a> をやり直してください。</td></tr>
+    <tr><td>ゾーンの中の区画を 1 つだけ選べない</td><td><span class="btn">ゾーン表示</span> でゾーンを非表示にしてから選んでください。</td></tr>
+    <tr><td>ゾーンの人数に、ある区画が数えられない</td><td>区画の四隅すべてがゾーンの中に入っている必要があります。ゾーンの角を少し外へ広げてください。</td></tr>
+    <tr><td>間違えて消してしまった</td><td><span class="btn">元に戻す</span>（<kbd>Ctrl</kbd>+<kbd>Z</kbd>）で戻せます。ただし、読み込み・区画リストの変更・再読み込みの前の操作は戻せません。</td></tr>
+    <tr><td>Ctrl+Z が効かない</td><td>文字の入力欄にカーソルがあるときや、設定などの画面を開いているときは、ツールの「元に戻す」は動きません。図面の何もない所をクリックしてから押してください。</td></tr>
+    <tr><td>前回の作業が消えた</td><td>ブラウザのデータを消したか、別のブラウザ・別の端末で開いている可能性があります。保存したファイルを <span class="btn">レイアウト読込</span> で読み込んでください。</td></tr>
+    <tr><td>PDF の図面が真っ白になる</td><td>読み込みの画面で、ページと解像度を確かめてください。それでも白いときは、画像（PNG）に変換してから読み込んでください。</td></tr>
+    <tr><td>参加者がつながらない</td><td><a href="#collab">マルチ操作</a> の「参加者がつながらないとき」をご覧ください。</td></tr>
+    <tr><td>インストール時に「Windows によって PC が保護されました」と出る</td><td>署名のない配布のためです。「詳細情報」→「実行」で進めます。職場のパソコンでは、管理者に確認してください。</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="shortcuts">
+  <h2>9. キー操作の一覧</h2>
+  <table>
+    <tr><th style="width:260px">キー</th><th>内容</th></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>元に戻す</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd> ／ <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>やり直し</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> ／ <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>コピー ／ 貼り付け</td></tr>
+    <tr><td><kbd>Delete</kbd></td><td>選んだものを削除</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>選択解除 ／ ゾーンの作図をやめる</td></tr>
+    <tr><td><kbd>Enter</kbd></td><td>ゾーンの作図を確定</td></tr>
+    <tr><td><kbd>Shift</kbd>+クリック</td><td>区画を選択に足す・外す</td></tr>
+    <tr><td><kbd>Shift</kbd>+ドラッグ（何もない所から）</td><td>囲んだ区画をまとめて選ぶ</td></tr>
+    <tr><td><kbd>Alt</kbd>+ドラッグ（ゾーン）</td><td>中の区画を動かさずにゾーンだけ動かす</td></tr>
+    <tr><td><kbd>Ctrl</kbd> を押しながら移動・回転</td><td>吸着・角度スナップの入・切を一時的に逆にする</td></tr>
+    <tr><td>マウスのホイール</td><td>図面の拡大・縮小</td></tr>
+    <tr><td>ダブルクリック（テキスト）</td><td>テキストを直す</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="download">
+  <h2>10. PDF 版・最新版の入手先</h2>
+  <p>このマニュアルの PDF 版（印刷用）は、次の場所にあります。</p>
+  <div class="downloads">
+    <a class="card" href="manual.pdf" download="避難所レイアウトツール_使い方マニュアル_v2.8.0.pdf"><b>このツールに入っている PDF 版</b><span>マニュアルと同じ場所の manual.pdf（インターネットにつながっていなくても開けます）</span></a>
+    <a class="card" href="https://github.com/DRR-Materials-Dev/EvacuationShelterLayoutTools/releases/latest/download/EvacuationShelterLayoutTools-manual.pdf"><b>最新の PDF 版（GitHub のリリース）</b><span>https://github.com/DRR-Materials-Dev/EvacuationShelterLayoutTools/releases/latest/download/EvacuationShelterLayoutTools-manual.pdf</span></a>
+    <a class="card" href="https://github.com/DRR-Materials-Dev/EvacuationShelterLayoutTools/releases/latest"><b>インストーラ・リリースノート</b><span>https://github.com/DRR-Materials-Dev/EvacuationShelterLayoutTools/releases/latest</span></a>
+    <a class="card" href="https://drr-materials-dev.github.io/EvacuationShelterLayoutTools/manual/"><b>HTML 版（インターネット上）</b><span>https://drr-materials-dev.github.io/EvacuationShelterLayoutTools/manual/</span></a>
+  </div>
+  <p>ブラウザ版のツールは <a href="https://drr-materials-dev.github.io/EvacuationShelterLayoutTools/">https://drr-materials-dev.github.io/EvacuationShelterLayoutTools/</a> で使えます。</p>
+  <div class="credit"><img src="img/si-logo.png" alt="スマートインプリメント"><span>避難所レイアウトツール 使い方マニュアル　Ver. 2.8.0<br>スマートインプリメント　Copyright © 2026 Smart Implement Naoyuki Shiba</span></div>
+</section>
+
+</main>
+</div>
+</body>
+</html>

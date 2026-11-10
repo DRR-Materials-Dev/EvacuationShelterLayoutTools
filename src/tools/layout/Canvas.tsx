@@ -57,7 +57,9 @@ import {
 import {
   getZoneCornersMeters,
   isZoneFullyInPolygon,
+  normalizeDegrees,
   polygonCentroid,
+  roundMeters,
   residentsInPolygon,
 } from '../../shared/geometry.ts';
 import ZoneImageKonva from '../../shared/components/ZoneImageKonva.tsx';
@@ -89,6 +91,13 @@ type GroupDragHandlers = {
   move: (node: Konva.Node, invertSnap: boolean) => void;
   /** invertSnap: Ctrl 押下でスナップの ON/OFF を反転 */
   end: (node: Konva.Node, invertSnap: boolean) => void;
+};
+
+/** ゾーンの回転ハンドルのハンドラ（v2.8.0）。node はゾーンの Group。 */
+type PolygonRotateHandlers = {
+  start: () => void;
+  move: (node: Konva.Node) => void;
+  end: (node: Konva.Node) => void;
 };
 
 /**
@@ -126,6 +135,10 @@ type Props = {
   onCursorMove?: (meters: Point | null) => void;
   /** ステータスバーへのメッセージ表示（コピー・貼り付け・ゾーン内選択の結果）。 */
   onStatusMessage?: (message: string | null) => void;
+  /** Ctrl+Z（元に戻す）。使えるかどうかの判定は呼び出し側で行う（設計書 §14.5）。 */
+  onUndo?: () => void;
+  /** Ctrl+Y／Ctrl+Shift+Z（やり直し）。 */
+  onRedo?: () => void;
   /** 値が変わるたびに、図面全体が見えるようズーム・表示位置を合わせる（レイアウト読込直後）。 */
   fitRequest?: number;
   /** ゾーンのドラッグで中の区画を連れずにゾーンだけ動かす（Alt キーの無いタブレット用の切替）。 */
@@ -173,7 +186,10 @@ const RemotePresenceMarker = ({
       const t = typeMap.get(item.typeId);
       const w = item.width ?? t?.width ?? 1;
       const h = item.height ?? t?.height ?? 1;
-      selAnchors.push({ id, x: (item.x + w / 2) * scaleRatio, y: (item.y + h / 2) * scaleRatio });
+      // 区画は左上原点のまわりに回転して描くので、中心は回転後の 4 隅の平均（v2.8.0 で修正。
+      // 以前は回転を無視した (x + w/2, y + h/2) で、回した区画では印が外れていた）
+      const c = polygonCentroid(getZoneCornersMeters(item, w, h));
+      selAnchors.push({ id, x: c.x * scaleRatio, y: c.y * scaleRatio });
     } else {
       selAnchors.push({ id, x: item.x * scaleRatio, y: item.y * scaleRatio });
     }
@@ -226,6 +242,8 @@ const Canvas = ({
   remotePresence,
   onCursorMove,
   onStatusMessage,
+  onUndo,
+  onRedo,
   fitRequest,
   zoneMoveAlone = false,
   multiSelect = false,
@@ -580,11 +598,83 @@ const Canvas = ({
     };
   };
 
+  /* ---------- ゾーンの回転（v2.8.0、設計書 §15） ---------- */
+
+  const polygonRotateRef = useRef<{
+    others: { node: Konva.Node; item: PlacedZone; start: Point; startRotation: number }[];
+  } | null>(null);
+
+  /**
+   * ゾーンの回転ハンドル。ゾーン単体の選択ではゾーンだけ、ゾーン内選択では中の区画も一緒に回す。
+   * 回転中はゾーンの Group の変換をそのまま中の区画のノードにも当て、離したときにその変換で座標を確定する
+   * （見た目と確定値がずれない）。確定は 1 回の updatePlacedMany（元に戻す 1 回、コラボは 1 トランザクション）。
+   */
+  const makePolygonRotate = (polygon: PolygonZone): PolygonRotateHandlers | undefined => {
+    const single = isSingleSelection && state.selectedIds[0] === polygon.id;
+    const inner = state.innerZoneId === polygon.id;
+    if (!single && !inner) return undefined;
+    return {
+      start: () => {
+        const others: { node: Konva.Node; item: PlacedZone; start: Point; startRotation: number }[] = [];
+        if (inner) {
+          for (const it of selectedItems) {
+            if (it.kind !== 'zone') continue;
+            const node = findNode(it.id);
+            if (node) others.push({ node, item: it, start: node.position(), startRotation: node.rotation() });
+          }
+        }
+        polygonRotateRef.current = { others };
+      },
+      move: (node) => {
+        const r = polygonRotateRef.current;
+        if (!r) return;
+        const t = node.getTransform();
+        const angle = node.rotation();
+        for (const o of r.others) {
+          o.node.position(t.point(o.start));
+          o.node.rotation(o.startRotation + angle);
+        }
+      },
+      end: (node) => {
+        const r = polygonRotateRef.current;
+        polygonRotateRef.current = null;
+        const t = node.getTransform().copy();
+        const angle = node.rotation();
+        // Konva ノードを元に戻してから状態を更新する
+        node.position({ x: 0, y: 0 });
+        node.rotation(0);
+        node.scale({ x: 1, y: 1 });
+        for (const o of r?.others ?? []) {
+          o.node.position(o.start);
+          o.node.rotation(o.startRotation);
+        }
+        if (normalizeDegrees(angle) === 0) return;
+        const s = state.scaleRatio;
+        const toMeters = (p: Point): Point => {
+          const q = t.point({ x: p.x * s, y: p.y * s });
+          return { x: roundMeters(q.x / s), y: roundMeters(q.y / s) };
+        };
+        const updates: { id: string; attrs: Partial<PlacedItem> }[] = [
+          { id: polygon.id, attrs: { points: polygon.points.map(toMeters) } },
+        ];
+        for (const o of r?.others ?? []) {
+          // 区画は左上原点のまわりに回転して描くので、原点を同じ変換で動かし、角度を足せばよい
+          const origin = toMeters({ x: o.item.x, y: o.item.y });
+          updates.push({
+            id: o.item.id,
+            attrs: { x: origin.x, y: origin.y, rotation: normalizeDegrees(o.item.rotation + angle) },
+          });
+        }
+        actions.updatePlacedMany(updates);
+      },
+    };
+  };
+
   /* ---------- キーボード（削除・選択解除・コピー・貼り付け） ---------- */
 
   // ハンドラ内で最新の値を参照するための ref（毎レンダー更新）
-  const keyCtxRef = useRef({ state, actions, selectedItems, typeMap, settings, onStatusMessage });
-  keyCtxRef.current = { state, actions, selectedItems, typeMap, settings, onStatusMessage };
+  const keyCtxRef = useRef({ state, actions, selectedItems, typeMap, settings, onStatusMessage, onUndo, onRedo });
+  keyCtxRef.current = { state, actions, selectedItems, typeMap, settings, onStatusMessage, onUndo, onRedo };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -605,6 +695,14 @@ const Canvas = ({
       }
       if (!(e.ctrlKey || e.metaKey) || e.altKey || busy) return;
       const key = e.key.toLowerCase();
+
+      // 元に戻す・やり直し（文字入力中・ダイアログ内は上の isTypingOrInDialog でブラウザに任せる）
+      if (key === 'z' || key === 'y') {
+        e.preventDefault();
+        if (key === 'y' || e.shiftKey) ctx.onRedo?.();
+        else ctx.onUndo?.();
+        return;
+      }
 
       if (key === 'c') {
         // 画面上の文字を選択している場合は通常のコピーに任せる
@@ -1025,6 +1123,8 @@ const Canvas = ({
                   onShiftDragStart={
                     canBoxSelect && !selectedSet.has(item.id) ? startBoxSelect : undefined
                   }
+                  rotate={makePolygonRotate(item)}
+                  rotationSnap={rotationSnap}
                   interactive={!state.isScaleMode && !state.isAddingText && !state.isAddingPolygon}
                   onSelect={(shift) => handleItemClick(item, shift)}
                   onChange={(attrs) => actions.updatePlaced(item.id, attrs)}
@@ -1458,6 +1558,10 @@ type PolygonItemProps = {
   groupDrag?: GroupDragHandlers;
   /** 未選択のゾーン上で Shift+ドラッグを始めたとき、範囲選択を開始する。 */
   onShiftDragStart?: () => void;
+  /** 回転ハンドル（ゾーン単体の選択・ゾーン内選択のときだけ）。 */
+  rotate?: PolygonRotateHandlers;
+  /** 回転ハンドルの角度スナップ。 */
+  rotationSnap: { snaps: number[]; tolerance: number };
   interactive: boolean;
   onSelect: (shiftKey: boolean) => void;
   onChange: (attrs: Partial<PolygonZone>) => void;
@@ -1471,11 +1575,22 @@ const PolygonItem = ({
   isInnerSelection,
   groupDrag,
   onShiftDragStart,
+  rotate,
+  rotationSnap,
   interactive,
   onSelect,
   onChange,
 }: PolygonItemProps) => {
   const groupRef = useRef<Konva.Group>(null);
+  const trRef = useRef<Konva.Transformer>(null);
+  const showRotate = isSelected && interactive && rotate !== undefined;
+  // 頂点が変わる（移動・回転・頂点の編集）たびに回転枠を付け直す
+  useEffect(() => {
+    if (showRotate && trRef.current && groupRef.current) {
+      trRef.current.nodes([groupRef.current]);
+      trRef.current.getLayer()?.batchDraw();
+    }
+  }, [showRotate, item.points]);
 
   const flatPoints = item.points.flatMap((p) => [p.x * scaleRatio, p.y * scaleRatio]);
   const centroid = polygonCentroid(item.points);
@@ -1489,6 +1604,7 @@ const PolygonItem = ({
   const labelWidth = Math.max(120, labelText.length * labelFont * 1.1);
 
   return (
+    <>
     <Group
       ref={groupRef}
       id={item.id}
@@ -1600,6 +1716,25 @@ const PolygonItem = ({
           />
         ))}
     </Group>
+    {showRotate && (
+      // 回転専用の枠（大きさは変えない）。回転の中心は枠の中心。
+      <Transformer
+        ref={trRef}
+        resizeEnabled={false}
+        rotateEnabled
+        rotationSnaps={rotationSnap.snaps}
+        rotationSnapTolerance={rotationSnap.tolerance}
+        borderDash={[4, 4]}
+        onTransformStart={() => rotate?.start()}
+        onTransform={() => {
+          if (groupRef.current) rotate?.move(groupRef.current);
+        }}
+        onTransformEnd={() => {
+          if (groupRef.current) rotate?.end(groupRef.current);
+        }}
+      />
+    )}
+    </>
   );
 };
 

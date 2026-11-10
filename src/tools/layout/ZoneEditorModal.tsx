@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Modal, Group, Button, TextInput, Box } from '@mantine/core';
-import { IconDeviceFloppy } from '@tabler/icons-react';
+import { Modal, Group, Button, TextInput, Box, Alert } from '@mantine/core';
+import { IconDeviceFloppy, IconInfoCircle } from '@tabler/icons-react';
 import type { ZoneList, ZoneType } from '../../shared/types.ts';
 import ZoneListPane from '../editor/ZoneListPane.tsx';
 import ZoneDetail from '../editor/ZoneDetail.tsx';
@@ -86,6 +86,10 @@ const ZoneEditorModal = ({ opened, initialList, onClose, onApply, onSaveShared }
       centered
       styles={{ body: { paddingTop: 8 } }}
     >
+      {/* 区画リストの変更は元に戻すの対象外。開いている間は元に戻す・やり直しも止める（設計書 §14.2） */}
+      <Alert variant="light" color="yellow" icon={<IconInfoCircle size={16} />} p="xs" mb="sm">
+        区画リストの編集は「元に戻す」で取り消せません。この画面を開いている間は「元に戻す」「やり直し」を使えません。
+      </Alert>
       <TextInput
         label="区画リスト名"
         value={list.name}

@@ -1,7 +1,7 @@
 {
   "name": "evacuation-shelter-layout-tools",
   "private": true,
-  "version": "2.7.0",
+  "version": "2.8.0",
   "type": "module",
   "description": "避難所レイアウト検討ツール（マルチ操作対応・ホスト用デスクトップアプリ）",
   "author": "Smart Implement Naoyuki Shiba",
@@ -21,7 +21,10 @@
     "electron:dev:standalone": "npm run build:standalone && electron . --app-mode=standalone",
     "electron:build": "npm run icon && npm run build:collab && electron-builder --win nsis",
     "electron:build:standalone": "npm run icon && npm run build:standalone && electron-builder --win nsis --config electron-builder.standalone.json",
-    "electron:build:all": "npm run electron:build && npm run electron:build:standalone"
+    "electron:build:all": "npm run electron:build && npm run electron:build:standalone",
+    "test": "vitest run",
+    "manual:shots": "node scripts/manual/shots.mjs",
+    "manual:pdf": "node scripts/manual/pdf.mjs"
   },
   "dependencies": {
     "@mantine/core": "^9.1.1",
@@ -59,7 +62,8 @@
     "sharp": "^0.34.5",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.2",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^5.1.0"
   },
   "build": {
     "appId": "jp.smartimplement.evac-layout-collab",

@@ -1,8 +1,12 @@
 import { ActionIcon, Button, Divider, Group, Stack, Text, Tooltip } from '@mantine/core';
-import { IconEye, IconEyeOff, IconTrash, IconX } from '@tabler/icons-react';
+import { IconEye, IconEyeOff, IconPolygon, IconTrash, IconX } from '@tabler/icons-react';
 
 type Props = {
   count: number;
+  /** 囲むゾーンの余白（m。ユーザー設定）。 */
+  hullMarginMeters: number;
+  /** 選択中の区画をすべて囲む凸形のゾーンを作る（v2.8.0）。 */
+  onCreateHullZone: () => void;
   /** 区画名表示の一括設定。undefined は区画リストの設定に戻す。 */
   onShowNameChange: (show: boolean | undefined) => void;
   /** 選択中の区画をまとめて削除する（Delete キーの無いタブレット向け）。 */
@@ -11,7 +15,7 @@ type Props = {
 };
 
 /** 複数の区画を選択したときの右側パネル。区画名の表示をまとめて切り替える（v2.7.0）。 */
-const MultiZonePanel = ({ count, onShowNameChange, onDelete, onClose }: Props) => (
+const MultiZonePanel = ({ count, hullMarginMeters, onCreateHullZone, onShowNameChange, onDelete, onClose }: Props) => (
   <Stack
     gap="xs"
     p="md"
@@ -27,6 +31,25 @@ const MultiZonePanel = ({ count, onShowNameChange, onDelete, onClose }: Props) =
         </ActionIcon>
       </Tooltip>
     </Group>
+    <Tooltip
+      label={`選択した区画をすべて囲む凸形のゾーンを作ります（余白 ${hullMarginMeters}m。余白は「設定」で変更できます）`}
+      multiline
+      w={240}
+    >
+      <Button
+        size="xs"
+        variant="light"
+        leftSection={<IconPolygon size={14} />}
+        style={{ flexShrink: 0 }}
+        onClick={onCreateHullZone}
+      >
+        囲むゾーンを作成
+      </Button>
+    </Tooltip>
+    <Text size="xs" c="dimmed">
+      余白 {hullMarginMeters}m（「設定」で変更）。作成後はゾーンと中の区画を選択した状態になります。
+    </Text>
+    <Divider />
     <Text size="sm">区画名の表示</Text>
     <Group gap={6} grow>
       <Button size="xs" variant="light" leftSection={<IconEye size={14} />} onClick={() => onShowNameChange(true)}>

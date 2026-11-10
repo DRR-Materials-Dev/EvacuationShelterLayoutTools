@@ -1,19 +1,15 @@
 /**
- * マルチ操作の同期セッション層。設計書 §9.4 / §9.16 / §9.17。
+ * マルチ操作の通信・プレゼンス層。設計書 §9.4 / §9.16 / §9.17 / §14.4。
  *
- * 同期対象は「レイアウト文書（全階層）」：
- * - `floors`：`Y.Array<Y.Map>`（各階層 = Y.Map：id/name/scaleRatio/background ＋ placed(Y.Array<Y.Map>)）。
- *   placed は 1 配置物 = 1 Y.Map（別要素の同時移動は自動マージ、同一要素同一プロパティは LWW）。
- * - `meta`：`Y.Map`（zoneList / zoneListName / residentTypes / initialized）。
+ * レイアウト文書そのもの（Y.Doc と文書操作・元に戻す）は `shared/layoutDoc.ts` が持つ。
+ * 本モジュールはその `doc` を y-websocket でハブへ接続し、接続状態とプレゼンス（カーソル・選択・
+ * 表示名・色）を扱う。UI 状態（アクティブ階層・選択・ビュー）は各ユーザーのローカルのまま。
  *
- * UI 状態（アクティブ階層・選択・ビュー）は各ユーザーのローカルのまま（プレゼンス共有は将来）。
- *
- * 本モジュールは yjs を静的 import するため、`useCollabLayer` から `import.meta.env.VITE_COLLAB`
+ * 本モジュールは y-websocket を静的 import するため、`useCollabLayer` から `import.meta.env.VITE_COLLAB`
  * ガード下の動的 import でのみ読み込む（Pages ビルドには非混入）。
  */
-import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import type { Floor, PlacedItem, ResidentType, ZoneList } from '../shared/types.ts';
+import type { LayoutDoc, LayoutSnapshot } from '../shared/layoutDoc.ts';
 import { PRESENCE_COLORS, type PresenceUser } from './presence.ts';
 
 export { PRESENCE_COLORS };
@@ -21,12 +17,8 @@ export type { PresenceUser };
 
 export type CollabStatus = 'connecting' | 'connected' | 'disconnected';
 
-export type CollabSnapshot = {
-  floors: Floor[];
-  zoneList: ZoneList | null;
-  zoneListName: string | null;
-  residentTypes: ResidentType[] | null;
-};
+/** 同期するレイアウト文書のスナップショット（`LayoutSnapshot` と同じ）。 */
+export type CollabSnapshot = LayoutSnapshot;
 
 /** 他ユーザーのプレゼンス（カーソル・選択）。 */
 export type RemotePresence = {
@@ -74,38 +66,9 @@ const saveStoredUser = (user: PresenceUser): void => {
 };
 
 export type CollabSession = {
-  getSnapshot: () => CollabSnapshot;
-  onChange: (cb: (snap: CollabSnapshot) => void) => () => void;
   onStatus: (cb: (status: CollabStatus) => void) => () => void;
+  /** ハブとの初回同期が終わったときに呼ばれる。 */
   onSynced: (cb: () => void) => () => void;
-  /** まだ初期化されていなければ host の現在の文書でシードする。 */
-  seedIfEmpty: (initial: CollabSnapshot) => void;
-  /* ---- placed 操作（floorId 指定） ---- */
-  updatePlaced: (floorId: string, id: string, attrs: Partial<PlacedItem>) => void;
-  addItem: (floorId: string, item: PlacedItem) => void;
-  removeItem: (floorId: string, id: string) => void;
-  /** 複数配置物の更新を 1 トランザクションで行う（複数選択の一括移動など）。 */
-  updatePlacedMany: (floorId: string, updates: { id: string; attrs: Partial<PlacedItem> }[]) => void;
-  /** 複数配置物の追加を 1 トランザクションで行う（貼り付け）。 */
-  addItems: (floorId: string, items: PlacedItem[]) => void;
-  /** 複数配置物の削除を 1 トランザクションで行う。 */
-  removeItems: (floorId: string, ids: string[]) => void;
-  /* ---- 階層レベル操作 ---- */
-  setBackground: (floorId: string, bg: Floor['background'] | null) => void;
-  setScaleRatio: (floorId: string, r: number) => void;
-  renameFloor: (floorId: string, name: string) => void;
-  addFloor: (floor: Floor) => void;
-  removeFloor: (floorId: string) => void;
-  moveFloor: (floorId: string, dir: -1 | 1) => void;
-  /** 全削除：指定階層の placed を消し背景を null にする。 */
-  clearFloor: (floorId: string) => void;
-  /* ---- 文書レベル操作 ---- */
-  setResidentTypes: (types: ResidentType[]) => void;
-  /** 区画リストを更新（placed は維持）。 */
-  setZoneList: (zoneList: ZoneList, zoneListName: string) => void;
-  /** 区画リストを差し替え、全階層の placed をクリア（区画タイプが変わるため）。 */
-  replaceZoneListClearPlaced: (zoneList: ZoneList, zoneListName: string) => void;
-  replaceDocument: (snap: CollabSnapshot) => void;
   /* ---- プレゼンス（カーソル・選択） ---- */
   updatePresence: (partial: LocalPresence) => void;
   onPresence: (cb: (others: RemotePresence[]) => void) => () => void;
@@ -113,48 +76,13 @@ export type CollabSession = {
   getLocalUser: () => PresenceUser;
   /** 自分の表示名・色を変更し、端末に永続化して他ユーザーへ配信する。 */
   setLocalUser: (user: PresenceUser) => void;
+  /** 通信を切る（文書 `layoutDoc` は呼び出し側が破棄する）。 */
   destroy: () => void;
 };
 
-type YMapU = Y.Map<unknown>;
-
-const itemToYMap = (item: PlacedItem): YMapU => {
-  const m = new Y.Map<unknown>();
-  for (const [k, v] of Object.entries(item)) {
-    if (v !== undefined) m.set(k, v);
-  }
-  return m;
-};
-
-const floorToYMap = (floor: Floor): YMapU => {
-  const m = new Y.Map<unknown>();
-  m.set('id', floor.id);
-  m.set('name', floor.name);
-  m.set('scaleRatio', floor.scaleRatio);
-  m.set('background', floor.background ?? null);
-  const arr = new Y.Array<YMapU>();
-  arr.push(floor.placed.map(itemToYMap));
-  m.set('placed', arr);
-  return m;
-};
-
-const floorFromYMap = (m: YMapU): Floor => {
-  const placedArr = m.get('placed') as Y.Array<YMapU> | undefined;
-  const bg = m.get('background') as Floor['background'] | null | undefined;
-  const floor: Floor = {
-    id: m.get('id') as string,
-    name: m.get('name') as string,
-    scaleRatio: m.get('scaleRatio') as number,
-    placed: placedArr ? placedArr.toArray().map((p) => p.toJSON() as PlacedItem) : [],
-  };
-  if (bg) floor.background = bg;
-  return floor;
-};
-
-export const createSession = (): CollabSession => {
-  const doc = new Y.Doc();
-  const floors = doc.getArray<YMapU>('floors');
-  const meta = doc.getMap<unknown>('meta');
+/** レイアウト文書をハブへ接続する。 */
+export const createSession = (layoutDoc: LayoutDoc): CollabSession => {
+  const { doc } = layoutDoc;
 
   const params = new URLSearchParams(window.location.search);
   const room = params.get('room') ?? 'poc1';
@@ -164,28 +92,6 @@ export const createSession = (): CollabSession => {
   const wsUrl = import.meta.env.VITE_COLLAB_WS_URL ?? `ws://${window.location.host}`;
 
   const provider = new WebsocketProvider(wsUrl, room, doc);
-
-  const findFloor = (floorId: string): YMapU | null => {
-    for (const m of floors.toArray()) {
-      if (m.get('id') === floorId) return m;
-    }
-    return null;
-  };
-  const floorPlaced = (floorId: string): Y.Array<YMapU> | null =>
-    (findFloor(floorId)?.get('placed') as Y.Array<YMapU> | undefined) ?? null;
-
-  const getSnapshot = (): CollabSnapshot => ({
-    floors: floors.toArray().map(floorFromYMap),
-    zoneList: (meta.get('zoneList') as ZoneList | undefined) ?? null,
-    zoneListName: (meta.get('zoneListName') as string | undefined) ?? null,
-    residentTypes: (meta.get('residentTypes') as ResidentType[] | undefined) ?? null,
-  });
-
-  const onChange = (cb: (snap: CollabSnapshot) => void): (() => void) => {
-    const handler = (): void => cb(getSnapshot());
-    doc.on('update', handler);
-    return () => doc.off('update', handler);
-  };
 
   const onStatus = (cb: (status: CollabStatus) => void): (() => void) => {
     const handler = (e: { status: string }): void => {
@@ -201,184 +107,6 @@ export const createSession = (): CollabSession => {
     };
     provider.on('sync', handler);
     return () => provider.off('sync', handler);
-  };
-
-  const applyMeta = (snap: CollabSnapshot): void => {
-    if (snap.zoneList) meta.set('zoneList', snap.zoneList);
-    if (snap.zoneListName != null) meta.set('zoneListName', snap.zoneListName);
-    if (snap.residentTypes) meta.set('residentTypes', snap.residentTypes);
-  };
-
-  const seedIfEmpty = (initial: CollabSnapshot): void => {
-    if (meta.get('initialized')) return;
-    doc.transact(() => {
-      if (floors.length === 0) floors.push(initial.floors.map(floorToYMap));
-      applyMeta(initial);
-      meta.set('initialized', true);
-    });
-  };
-
-  const updatePlaced = (floorId: string, id: string, attrs: Partial<PlacedItem>): void => {
-    updatePlacedMany(floorId, [{ id, attrs }]);
-  };
-
-  const updatePlacedMany = (
-    floorId: string,
-    updates: { id: string; attrs: Partial<PlacedItem> }[],
-  ): void => {
-    const arr = floorPlaced(floorId);
-    if (!arr || updates.length === 0) return;
-    const byId = new Map(arr.toArray().map((m) => [m.get('id') as string, m]));
-    doc.transact(() => {
-      for (const { id, attrs } of updates) {
-        const m = byId.get(id);
-        if (!m) continue; // 他ユーザーが削除済み
-        for (const [k, v] of Object.entries(attrs)) {
-          if (v === undefined) m.delete(k);
-          else m.set(k, v);
-        }
-      }
-    });
-  };
-
-  const addItems = (floorId: string, items: PlacedItem[]): void => {
-    const arr = floorPlaced(floorId);
-    if (!arr || items.length === 0) return;
-    doc.transact(() => arr.push(items.map(itemToYMap)));
-  };
-
-  const removeItems = (floorId: string, ids: string[]): void => {
-    const arr = floorPlaced(floorId);
-    if (!arr || ids.length === 0) return;
-    const target = new Set(ids);
-    doc.transact(() => {
-      // 後ろから消してインデックスずれを避ける
-      const list = arr.toArray();
-      for (let i = list.length - 1; i >= 0; i--) {
-        if (target.has(list[i].get('id') as string)) arr.delete(i, 1);
-      }
-    });
-  };
-
-  const addItem = (floorId: string, item: PlacedItem): void => {
-    const arr = floorPlaced(floorId);
-    if (!arr) return;
-    doc.transact(() => arr.push([itemToYMap(item)]));
-  };
-
-  const removeItem = (floorId: string, id: string): void => {
-    const arr = floorPlaced(floorId);
-    if (!arr) return;
-    const idx = arr.toArray().findIndex((m) => m.get('id') === id);
-    if (idx < 0) return;
-    doc.transact(() => arr.delete(idx, 1));
-  };
-
-  const setBackground = (floorId: string, bg: Floor['background'] | null): void => {
-    const f = findFloor(floorId);
-    if (!f) return;
-    doc.transact(() => f.set('background', bg ?? null));
-  };
-
-  const setScaleRatio = (floorId: string, r: number): void => {
-    if (!(r > 0 && Number.isFinite(r))) return;
-    const f = findFloor(floorId);
-    if (!f) return;
-    doc.transact(() => f.set('scaleRatio', r));
-  };
-
-  const renameFloor = (floorId: string, name: string): void => {
-    const f = findFloor(floorId);
-    if (!f) return;
-    doc.transact(() => f.set('name', name));
-  };
-
-  const addFloor = (floor: Floor): void => {
-    doc.transact(() => floors.push([floorToYMap(floor)]));
-  };
-
-  const removeFloor = (floorId: string): void => {
-    if (floors.length <= 1) return; // 最低 1 階層を維持
-    const idx = floors.toArray().findIndex((m) => m.get('id') === floorId);
-    if (idx < 0) return;
-    doc.transact(() => floors.delete(idx, 1));
-  };
-
-  const moveFloor = (floorId: string, dir: -1 | 1): void => {
-    const arr = floors.toArray();
-    const idx = arr.findIndex((m) => m.get('id') === floorId);
-    const target = idx + dir;
-    if (idx < 0 || target < 0 || target >= arr.length) return;
-    // Yjs は統合済み要素の再挿入を許さないため、移動対象を JSON から作り直す。
-    const moved = floorFromYMap(arr[idx]);
-    doc.transact(() => {
-      floors.delete(idx, 1);
-      floors.insert(target, [floorToYMap(moved)]);
-    });
-  };
-
-  const clearFloor = (floorId: string): void => {
-    const f = findFloor(floorId);
-    if (!f) return;
-    const arr = f.get('placed') as Y.Array<YMapU> | undefined;
-    doc.transact(() => {
-      if (arr) arr.delete(0, arr.length);
-      f.set('background', null);
-    });
-  };
-
-  const setResidentTypes = (types: ResidentType[]): void => {
-    const validIds = new Set(types.map((t) => t.id));
-    doc.transact(() => {
-      meta.set('residentTypes', types);
-      // 削除された種類の人数を全階層の placed から除去
-      for (const fm of floors.toArray()) {
-        const arr = fm.get('placed') as Y.Array<YMapU> | undefined;
-        if (!arr) continue;
-        for (const m of arr.toArray()) {
-          if (m.get('kind') !== 'zone') continue;
-          const residents = m.get('residents') as Record<string, number> | undefined;
-          if (!residents) continue;
-          const filtered: Record<string, number> = {};
-          let changed = false;
-          for (const [typeId, n] of Object.entries(residents)) {
-            if (validIds.has(typeId)) filtered[typeId] = n;
-            else changed = true;
-          }
-          if (changed) {
-            if (Object.keys(filtered).length > 0) m.set('residents', filtered);
-            else m.delete('residents');
-          }
-        }
-      }
-    });
-  };
-
-  const replaceDocument = (snap: CollabSnapshot): void => {
-    doc.transact(() => {
-      floors.delete(0, floors.length);
-      floors.push(snap.floors.map(floorToYMap));
-      applyMeta(snap);
-      meta.set('initialized', true);
-    });
-  };
-
-  const setZoneList = (zoneList: ZoneList, zoneListName: string): void => {
-    doc.transact(() => {
-      meta.set('zoneList', zoneList);
-      meta.set('zoneListName', zoneListName);
-    });
-  };
-
-  const replaceZoneListClearPlaced = (zoneList: ZoneList, zoneListName: string): void => {
-    doc.transact(() => {
-      meta.set('zoneList', zoneList);
-      meta.set('zoneListName', zoneListName);
-      for (const fm of floors.toArray()) {
-        const arr = fm.get('placed') as Y.Array<YMapU> | undefined;
-        if (arr) arr.delete(0, arr.length);
-      }
-    });
   };
 
   /* ---- プレゼンス（カーソル・選択） ---- */
@@ -431,32 +159,11 @@ export const createSession = (): CollabSession => {
 
   const destroy = (): void => {
     provider.destroy();
-    doc.destroy();
   };
 
   return {
-    getSnapshot,
-    onChange,
     onStatus,
     onSynced,
-    seedIfEmpty,
-    updatePlaced,
-    addItem,
-    removeItem,
-    updatePlacedMany,
-    addItems,
-    removeItems,
-    setBackground,
-    setScaleRatio,
-    renameFloor,
-    addFloor,
-    removeFloor,
-    moveFloor,
-    clearFloor,
-    setResidentTypes,
-    setZoneList,
-    replaceZoneListClearPlaced,
-    replaceDocument,
     updatePresence,
     onPresence,
     getLocalUser,

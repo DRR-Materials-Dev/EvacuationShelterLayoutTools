@@ -78,7 +78,7 @@ const EditorPage = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <AppHeader title="区画エディタ" />
+      <AppHeader title="区画エディタ" manualSection="editor" />
       <ListToolbar
         listName={editor.zoneList.name}
         onRenameList={editor.renameList}

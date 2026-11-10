@@ -3,7 +3,6 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -38,8 +37,6 @@ import { isPdfFile } from '../tools/layout/pdfRender.ts';
 import UserSettingsModal from '../shared/components/UserSettingsModal.tsx';
 import PresenceSettingsModal from '../collab/PresenceSettingsModal.tsx';
 import { useLayoutState } from '../tools/layout/useLayoutState.ts';
-import { useCollabLayer } from '../collab/useCollabLayer.ts';
-import type { CollabSnapshot } from '../collab/session.ts';
 import { getElectronAPI } from '../collab/electron.ts';
 
 // 参加者招待モーダル（qrcode を含む）。Pages バンドルに混ぜないよう VITE_COLLAB ガード下で遅延読み込み。
@@ -48,17 +45,15 @@ const SessionInfoModal =
     ? lazy(() => import('../collab/SessionInfoModal.tsx'))
     : null;
 import { getZoneResidentTotal, isPlacedZoneNameShown, sumResidentsByType } from '../shared/types.ts';
-import type { LayoutFile, PlacedItem, PlacedZone, ZoneList } from '../shared/types.ts';
+import type { PlacedItem, PlacedZone } from '../shared/types.ts';
 import type { Point } from '../tools/layout/types.ts';
-import type { StoredBackground } from '../shared/storage.ts';
-import { DEFAULT_ZONE_LIST } from '../shared/constants.ts';
 import ZoneListPresetPicker from '../shared/components/ZoneListPresetPicker.tsx';
 import {
   DEFAULT_PRESET_ID,
   loadZoneListPreset,
   type ZoneListPresetId,
 } from '../shared/zoneListPresets.ts';
-import { isZoneFullyInPolygon, residentsInPolygon } from '../shared/geometry.ts';
+import { hullAroundZones, isZoneFullyInPolygon, residentsInPolygon } from '../shared/geometry.ts';
 import {
   downloadLayout,
   readLayoutFile,
@@ -76,128 +71,22 @@ import { readZoneListFile, ZoneListParseError } from '../shared/zoneListIO.ts';
 
 /** ゾーン選択時にステータスバーへ出すヒント。 */
 const ZONE_SELECT_HINT =
-  'ゾーン選択中： Alt を押しながらドラッグ（タブレットは「ゾーンだけ移動」ボタン）でゾーンだけ移動 ／ もう一度クリックでゾーン内選択（中の区画もまとめて選択）';
+  'ゾーン選択中： Alt を押しながらドラッグ（タブレットは「ゾーンだけ移動」ボタン）でゾーンだけ移動 ／ 回転ハンドルでゾーンだけ回転 ／ もう一度クリックでゾーン内選択（中の区画もまとめて選択・回転）';
 
 const LayoutPage = () => {
-  const local = useLayoutState();
-
-  /* ---------- マルチ操作：collab 有効ビルドはレイアウト文書（全階層）を Yjs 同期に差し替える ---------- */
-  // 設計書 §9.16 / §9.17。同期対象＝全階層 floors（各 placed/背景/縮尺）＋区画リスト＋居住者種類。
-  // アクティブ階層・選択等の UI は各ユーザーローカル。collab 無効ビルドは従来経路をそのまま使う。
-  const collabSeed: CollabSnapshot = {
-    floors: local.floors,
-    zoneList: local.zoneList,
-    zoneListName: local.zoneListName,
-    residentTypes: local.residentTypes,
-  };
-  const collab = useCollabLayer(collabSeed);
+  // レイアウト文書は全版とも Yjs（LayoutDoc）が正本。マルチ操作版はそれをハブへ接続する（設計書 §14.4）。
+  // アクティブ階層・選択等の UI は各ユーザーローカル。
+  const layout = useLayoutState();
+  const state = layout;
+  const actions = layout;
+  const { collab } = layout;
   const useShared = collab.active && collab.ready;
   const canLoad = !collab.active || collab.isHost; // 参加者は図面/レイアウト読込を禁止
-
-  // 共有 floors からアクティブ階層を解決（ローカル activeFloorId が無効なら先頭にフォールバック）。
-  const sharedFloors = collab.snapshot.floors;
-  const sharedActiveFloor = useShared
-    ? (sharedFloors.find((f) => f.id === local.activeFloorId) ?? sharedFloors[0])
-    : undefined;
-  const effectiveFloorId = sharedActiveFloor?.id ?? local.activeFloorId;
-
-  const state: typeof local = useMemo(() => {
-    if (!useShared) return local;
-    const s = collab.snapshot;
-    return {
-      ...local,
-      floors: sharedFloors,
-      activeFloorId: effectiveFloorId,
-      placed: sharedActiveFloor?.placed ?? [],
-      background: sharedActiveFloor?.background ?? null,
-      scaleRatio: sharedActiveFloor?.scaleRatio ?? local.scaleRatio,
-      zoneList: s.zoneList ?? local.zoneList,
-      zoneListName: s.zoneListName ?? local.zoneListName,
-      residentTypes: s.residentTypes ?? local.residentTypes,
-    };
-  }, [useShared, collab.snapshot, sharedFloors, sharedActiveFloor, effectiveFloorId, local]);
-
-  const actions: typeof local = useMemo(() => {
-    if (!useShared) return local;
-    const fid = effectiveFloorId;
-    return {
-      ...local,
-      /* placed（アクティブ階層） */
-      updatePlaced: (id: string, attrs: Partial<PlacedItem>) => collab.updatePlaced(fid, id, attrs),
-      setZoneResidents: (id: string, residents: Record<string, number>) =>
-        collab.setZoneResidents(fid, id, residents),
-      removePlaced: (id: string) => collab.removePlaced(fid, id),
-      updatePlacedMany: (updates: { id: string; attrs: Partial<PlacedItem> }[]) =>
-        collab.updatePlacedMany(fid, updates),
-      addItems: (items: PlacedItem[]) => collab.addItems(fid, items),
-      removePlacedMany: (ids: string[]) => collab.removePlacedMany(fid, ids),
-      addPlacedZone: (typeId: string, x: number, y: number) => {
-        local.setSelectedId(collab.addPlacedZone(fid, typeId, x, y));
-      },
-      addText: (x: number, y: number, text: string, fontSize: number, color: string) => {
-        local.setSelectedId(collab.addText(fid, x, y, text, fontSize, color));
-      },
-      addPolygon: (points: Point[]) => {
-        const id = collab.addPolygon(fid, points);
-        if (id) local.setSelectedId(id);
-      },
-      /* 階層レベル */
-      setBackground: (bg: StoredBackground | null) => collab.setBackground(fid, bg),
-      setScaleRatio: (r: number) => collab.setScaleRatio(fid, r),
-      setResidentTypes: collab.setResidentTypes,
-      /* 区画リスト編集（全員へ同期。ローカル版も呼んで IndexedDB 等の副作用は維持） */
-      applyZoneListEdits: (list: ZoneList) => {
-        collab.setZoneList(list, list.name);
-        local.applyZoneListEdits(list);
-      },
-      saveSharedZoneList: (list: ZoneList) => {
-        collab.setZoneList(list, list.name);
-        local.saveSharedZoneList(list);
-      },
-      replaceZoneList: (list: ZoneList) => {
-        collab.replaceZoneListClearPlaced(list, list.name);
-        local.replaceZoneList(list);
-      },
-      resetZoneListToDefault: (list?: ZoneList, presetId?: ZoneListPresetId) => {
-        const l = list ?? DEFAULT_ZONE_LIST;
-        collab.replaceZoneListClearPlaced(l, l.name);
-        local.resetZoneListToDefault(l, presetId);
-      },
-      clearAll: () => {
-        collab.clearFloor(fid);
-        local.setSelectedId(null);
-      },
-      loadLayout: (layout: LayoutFile) => {
-        collab.loadLayout(layout);
-        local.setSelectedId(null);
-        if (layout.floors[0]) local.setActiveFloor(layout.floors[0].id);
-      },
-      // 保存は共有スナップショット（全階層＋区画リスト＋居住者種類）から組み立てる。
-      buildLayoutFile: (): LayoutFile => ({
-        version: 2,
-        zoneListName: collab.snapshot.zoneListName ?? local.zoneListName,
-        residentTypes: collab.snapshot.residentTypes ?? local.residentTypes,
-        zoneList: collab.snapshot.zoneList ?? local.zoneList,
-        floors: collab.snapshot.floors,
-      }),
-      /* 階層タブ操作（全員へ同期） */
-      addFloor: () => local.setActiveFloor(collab.addFloor()),
-      removeFloor: (id: string) => {
-        collab.removeFloor(id);
-        if (local.activeFloorId === id) {
-          const remaining = sharedFloors.filter((f) => f.id !== id);
-          if (remaining[0]) local.setActiveFloor(remaining[0].id);
-        }
-      },
-      renameFloor: (id: string, name: string) => collab.renameFloor(id, name),
-      moveFloor: (id: string, dir: -1 | 1) => collab.moveFloor(id, dir),
-      setActiveFloor: (id: string) => local.setActiveFloor(id),
-    };
-  }, [useShared, effectiveFloorId, sharedFloors, collab, local]);
+  const effectiveFloorId = state.activeFloorId;
   const stageRef = useRef<Konva.Stage | null>(null);
 
   /* ---------- 存在しなくなった配置物を選択から外す（削除・他ユーザーの操作・階層切替） ---------- */
-  const { selectedIds: curSelectedIds, innerZoneId: curInnerZoneId, setSelection } = local;
+  const { selectedIds: curSelectedIds, innerZoneId: curInnerZoneId, setSelection } = state;
   useEffect(() => {
     if (curSelectedIds.length === 0) return;
     const exists = new Set(state.placed.map((p) => p.id));
@@ -216,10 +105,10 @@ const LayoutPage = () => {
     if (!useShared) return;
     updatePresence({
       floorId: effectiveFloorId,
-      selectedId: local.selectedId ?? local.selectedIds[0] ?? null,
-      selectedIds: local.selectedIds,
+      selectedId: state.selectedId ?? state.selectedIds[0] ?? null,
+      selectedIds: state.selectedIds,
     });
-  }, [useShared, effectiveFloorId, local.selectedId, local.selectedIds, updatePresence]);
+  }, [useShared, effectiveFloorId, state.selectedId, state.selectedIds, updatePresence]);
   const handleCursorMove = useCallback(
     (meters: Point | null) => updatePresence({ cursor: meters }),
     [updatePresence],
@@ -263,7 +152,7 @@ const LayoutPage = () => {
    * 参加直後に図面が無くても、後からホストが図面を読み込んだ時点で 1 回だけ合わせる。
    */
   const participantFittedRef = useRef(false);
-  const hasSharedBackground = Boolean(sharedActiveFloor?.background);
+  const hasSharedBackground = Boolean(state.background);
   useEffect(() => {
     if (!useShared || collab.isHost || participantFittedRef.current || !hasSharedBackground) return;
     participantFittedRef.current = true;
@@ -356,6 +245,26 @@ const LayoutPage = () => {
           })
           .map((z) => z.id)
       : [];
+
+  /* ---------- 複数選択した区画を囲むゾーン（v2.8.0、設計書 §15） ---------- */
+  const handleCreateHullZone = () => {
+    const targets = placedZones.filter((z) => state.selectedIds.includes(z.id));
+    if (targets.length === 0) return;
+    const margin = userSettings.zoneHull.marginMeters;
+    const points = hullAroundZones(targets, zoneDims, margin);
+    // 1 回の追加（＝元に戻す 1 回）。頂点は格子に合わせない（余白を保つため）
+    const id = actions.addPolygon(points);
+    if (!id) return;
+    // ゾーン内選択にする（選んでいなかった区画でも、ゾーンに完全に収まるものは含める。§10.1 と同じ判定）
+    const inner = placedZones
+      .filter((z) => {
+        const d = zoneDims(z);
+        return isZoneFullyInPolygon(z, d.width, d.height, points);
+      })
+      .map((z) => z.id);
+    actions.setSelection([id, ...inner], id);
+    setStatusMessage(`区画 ${targets.length} 件を囲むゾーンを作成しました（余白 ${margin}m）。ゾーン内選択中: 区画 ${inner.length} 件`);
+  };
 
   /* ---------- 背景画像の読み込み ---------- */
   const handleLoadBackground = useCallback(
@@ -522,6 +431,24 @@ const LayoutPage = () => {
     setStatusMessage(pasted.message);
   }, [state.zoneList.zones, userSettings.snap, actions]);
 
+  /* ---------- 元に戻す・やり直し（設計書 §14.5。キーボードは Canvas 側、ボタンは EditActionsBar） ---------- */
+  // 区画エディタを開いている間は使えない（§14.2）。ショートカットはダイアログ内で止まるが、念のためここでも止める。
+  const undoBlockedReason = zoneEditorOpen
+    ? '区画リストの編集中は、元に戻す・やり直しは使えません'
+    : state.isScaleMode || state.isAddingText || state.isAddingPolygon
+      ? '縮尺設定・テキスト配置・ゾーン作図の間は使えません'
+      : null;
+
+  const handleUndo = useCallback(() => {
+    if (undoBlockedReason) return;
+    if (actions.undo()) setStatusMessage('元に戻しました');
+  }, [undoBlockedReason, actions]);
+
+  const handleRedo = useCallback(() => {
+    if (undoBlockedReason) return;
+    if (actions.redo()) setStatusMessage('やり直しました');
+  }, [undoBlockedReason, actions]);
+
   /* ---------- 全削除 ---------- */
   const handleClearAllConfirm = useCallback(() => {
     actions.clearAll();
@@ -638,7 +565,7 @@ const LayoutPage = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <AppHeader title="避難所レイアウト" />
+      <AppHeader title="避難所レイアウト" manualSection="layout" />
       {collab.active && (
         <div
           style={{
@@ -735,6 +662,11 @@ const LayoutPage = () => {
         onMove={actions.moveFloor}
         rightSection={
           <EditActionsBar
+            canUndo={state.history.canUndo}
+            canRedo={state.history.canRedo}
+            undoBlockedReason={undoBlockedReason}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
             hasSelection={state.selectedIds.length > 0}
             canPaste={canPaste}
             multiSelect={multiSelect}
@@ -766,6 +698,8 @@ const LayoutPage = () => {
           remotePresence={remotePresence}
           onCursorMove={useShared ? handleCursorMove : undefined}
           onStatusMessage={setStatusMessage}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
           fitRequest={fitRequest}
           zoneMoveAlone={zoneMoveAlone}
           multiSelect={multiSelect}
@@ -780,7 +714,9 @@ const LayoutPage = () => {
               selectedZone,
               state.zoneList.zones.find((z) => z.id === selectedZone.typeId),
             )}
-            onChange={(residents) => actions.setZoneResidents(selectedZone.id, residents)}
+            onChange={(residents) =>
+              actions.setZoneResidents(selectedZone.id, residents, { merge: true })
+            }
             onShowNameChange={(show) => setZonesShowName([selectedZone.id], show)}
             onDelete={() => actions.removePlacedMany([selectedZone.id])}
             onClose={() => actions.setSelectedId(null)}
@@ -789,6 +725,8 @@ const LayoutPage = () => {
         {!selectedZone && !selectedPolygon && selectedZoneIds.length >= 2 && (
           <MultiZonePanel
             count={selectedZoneIds.length}
+            hullMarginMeters={userSettings.zoneHull.marginMeters}
+            onCreateHullZone={handleCreateHullZone}
             onShowNameChange={(show) => setZonesShowName(selectedZoneIds, show)}
             onDelete={() => actions.removePlacedMany(selectedZoneIds)}
             onClose={() => actions.setSelection([])}
@@ -801,7 +739,7 @@ const LayoutPage = () => {
             residentTypes={state.residentTypes}
             byType={polygonCount.byType}
             total={polygonCount.total}
-            onChange={(attrs) => actions.updatePlaced(selectedPolygon.id, attrs)}
+            onChange={(attrs) => actions.updatePlaced(selectedPolygon.id, attrs, { merge: true })}
             innerZoneCount={polygonInnerZoneIds.length}
             onInnerZonesShowName={(show) => setZonesShowName(polygonInnerZoneIds, show)}
             moveAlone={zoneMoveAlone}
