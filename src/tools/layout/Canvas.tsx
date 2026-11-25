@@ -1272,6 +1272,15 @@ const ZoneItem = ({
   const heightPx = heightMeters * scaleRatio;
   const xPx = item.x * scaleRatio;
   const yPx = item.y * scaleRatio;
+  // サイズ変更後、Group の子（Rect・clip）の大きさが変わっても Transformer は自動で
+  // 枠を測り直さない（Group 自身の属性の変化しか監視しない）ため、明示的に更新する。
+  useEffect(() => {
+    if (isSelected && showTransformer && trRef.current) {
+      trRef.current.forceUpdate();
+      trRef.current.getLayer()?.batchDraw();
+    }
+  }, [isSelected, showTransformer, widthPx, heightPx]);
+
   const color = type?.color ?? '#cccccc';
   const displayText = type ? getZoneDisplayText(type) : '(不明な区画)';
   const nameColor = type ? getZoneNameColor(type) : '#000000';
